@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     INVESTIGATION_TIMEOUT_SECONDS: int = 300
     INVESTIGATION_ALLOWED_ROLES: str = "admin,analyst"
     INVESTIGATION_LOCAL_FILES_ONLY: bool = True
+    INVESTIGATION_DEBUG: bool = False
 
     # -----------------------------------------
     # Scheduler
