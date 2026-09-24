@@ -42,12 +42,20 @@ def main() -> None:
             tokenize=False,
             add_generation_prompt=True,
         )
+        raw_inputs = tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=False,
+        )
+        raw_input_tokens = raw_inputs["input_ids"].shape[1]
         inputs = tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
             max_length=settings.INVESTIGATION_CONTEXT_TOKENS,
         )
+        input_tokens = inputs["input_ids"].shape[1]
+        context_truncated = raw_input_tokens > input_tokens
         with torch.inference_mode():
             output_ids = model.generate(
                 **inputs,
@@ -57,7 +65,28 @@ def main() -> None:
             )
         generated = output_ids[0][inputs["input_ids"].shape[1]:]
         text = tokenizer.decode(generated, skip_special_tokens=True).strip()
-        json.dump({"ok": True, "text": text}, sys.stdout)
+        output_tokens = generated.shape[0]
+        ended_with_eos = bool(
+            output_tokens
+            and tokenizer.eos_token_id is not None
+            and generated[-1].item() == tokenizer.eos_token_id
+        )
+        json.dump(
+            {
+                "ok": True,
+                "text": text,
+                "diagnostics": {
+                    "prompt_chars": len(prompt),
+                    "raw_input_tokens": raw_input_tokens,
+                    "input_tokens": input_tokens,
+                    "context_truncated": context_truncated,
+                    "output_tokens": output_tokens,
+                    "max_new_tokens": max_tokens,
+                    "ended_with_eos": ended_with_eos,
+                },
+            },
+            sys.stdout,
+        )
     except Exception:
         json.dump({"ok": False}, sys.stdout)
         raise SystemExit(1)
