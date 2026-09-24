@@ -91,6 +91,12 @@ class LocalTransformersProvider(BaseLLMProvider):
                 raise AgentOutputError(
                     "The investigation model worker did not return generated text."
                 )
+            if settings.INVESTIGATION_DEBUG:
+                print(
+                    "[INVESTIGATION] Raw model output:\n"
+                    + envelope["text"],
+                    flush=True,
+                )
             return {"text": envelope["text"]}
         finally:
             self._lock.release()
