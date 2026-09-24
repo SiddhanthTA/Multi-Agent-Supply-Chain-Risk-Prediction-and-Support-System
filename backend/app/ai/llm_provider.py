@@ -100,11 +100,10 @@ def _parse_json_object(text: str) -> dict:
     if not text:
         raise AgentOutputError("The investigation model returned an empty response.")
     start = text.find("{")
-    end = text.rfind("}")
-    if start < 0 or end <= start:
+    if start < 0:
         raise AgentOutputError("The investigation model did not return a JSON object.")
     try:
-        value = json.loads(text[start:end + 1])
+        value, _ = json.JSONDecoder().raw_decode(text[start:])
     except json.JSONDecodeError as exc:
         raise AgentOutputError("The investigation model returned malformed JSON.") from exc
     if not isinstance(value, dict):
