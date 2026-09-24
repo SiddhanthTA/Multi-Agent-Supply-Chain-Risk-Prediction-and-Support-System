@@ -79,13 +79,15 @@ class Settings(BaseSettings):
     # Risk Investigation Agent
     # -----------------------------------------
     INVESTIGATION_PROVIDER: str = "local"
-    INVESTIGATION_MODEL_PATH: str = "Qwen/Qwen2.5-0.5B-Instruct"
-    INVESTIGATION_MODEL_NAME: str = "Qwen2.5-0.5B-Instruct"
-    INVESTIGATION_CONTEXT_TOKENS: int = 4096
-    INVESTIGATION_MAX_NEW_TOKENS: int = 700
-    INVESTIGATION_TIMEOUT_SECONDS: int = 90
+    INVESTIGATION_MODEL_PATH: str = "HuggingFaceTB/SmolLM2-135M-Instruct"
+    INVESTIGATION_MODEL_NAME: str = "SmolLM2-135M-Instruct"
+    INVESTIGATION_CONTEXT_TOKENS: int = 2048
+    INVESTIGATION_MAX_NEW_TOKENS: int = 120
+    INVESTIGATION_TIMEOUT_SECONDS: int = 120
     INVESTIGATION_ALLOWED_ROLES: str = "admin,analyst"
     INVESTIGATION_LOCAL_FILES_ONLY: bool = True
+    INVESTIGATION_DEBUG: bool = False
+    PIPELINE_VERBOSE_LOGS: bool = False
 
     # -----------------------------------------
     # Scheduler
