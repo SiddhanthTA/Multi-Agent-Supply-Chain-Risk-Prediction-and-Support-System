@@ -9,6 +9,13 @@ from app.models.prediction import Prediction
 from app.services.recommendation_service import save_generated_recommendation
 import time
 
+from app.config.settings import settings
+
+
+def _pipeline_log(message: str):
+    if settings.PIPELINE_VERBOSE_LOGS:
+        print(message)
+
 NORMAL_WEATHER_KEYWORDS = [
     "clear", "sunny", "partly cloudy", "cloudy", "overcast"
 ]
@@ -183,10 +190,7 @@ def process_event(
         )
         inference_time = time.perf_counter() - inference_start
 
-        print(
-            f"AI Inference Time: "
-            f"{inference_time:.3f} seconds"
-        )
+        _pipeline_log(f"AI Inference Time: {inference_time:.3f} seconds")
 
         # -----------------------------------------
         # Create or Update Risk Object
@@ -225,11 +229,9 @@ def process_event(
         else:
             prediction_status = "Low Confidence"
 
-        print(
-            f"AI Prediction -> "
-            f"Category: {ai_result['category']}, "
-            f"Severity: {ai_result['severity']}, "
-            f"Confidence: {confidence:.2f}, "
+        _pipeline_log(
+            f"AI Prediction -> Category: {ai_result['category']}, "
+            f"Severity: {ai_result['severity']}, Confidence: {confidence:.2f}, "
             f"Status: {prediction_status}"
         )
 
@@ -271,10 +273,7 @@ def process_event(
         
         pipeline_time = time.perf_counter() - pipeline_start
 
-        print(
-            f"Pipeline Execution Time: "
-            f"{pipeline_time:.3f} seconds"
-        )
+        _pipeline_log(f"Pipeline Execution Time: {pipeline_time:.3f} seconds")
 
         return {
             "event": event,
@@ -313,11 +312,9 @@ def process_weather_event(
             vis_km=vis_km,
         )
 
-        print(
-            f"Rule-Based Prediction -> "
-            f"Category: {category}, "
-            f"Severity: {severity}, "
-            f"Confidence: {confidence:.2f}"
+        _pipeline_log(
+            f"Rule-Based Prediction -> Category: {category}, "
+            f"Severity: {severity}, Confidence: {confidence:.2f}"
         )
 
         risk_status = "Active" if is_active else "Inactive"
