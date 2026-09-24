@@ -107,7 +107,13 @@ class RiskInvestigationAgent:
         try:
             parsed = InvestigationGeneration.model_validate(generated)
         except ValidationError as exc:
-            raise AgentOutputError("Investigation output failed schema validation.") from exc
+            details = "; ".join(
+                f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+                for error in exc.errors()
+            )
+            raise AgentOutputError(
+                f"Investigation output failed schema validation: {details}"
+            ) from exc
 
         by_ref = {item.ref: item for item in evidence}
         allowed_types = {
