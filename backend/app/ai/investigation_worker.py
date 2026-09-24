@@ -18,13 +18,22 @@ def main() -> None:
             settings.INVESTIGATION_MODEL_PATH,
             local_files_only=settings.INVESTIGATION_LOCAL_FILES_ONLY,
         )
+
+        load_kwargs = {
+            "low_cpu_mem_usage": True,
+            "local_files_only": settings.INVESTIGATION_LOCAL_FILES_ONLY,
+        }
+        if torch.cuda.is_available():
+            load_kwargs["torch_dtype"] = torch.float16
+        else:
+            load_kwargs["torch_dtype"] = torch.float32
+
         model = AutoModelForCausalLM.from_pretrained(
             settings.INVESTIGATION_MODEL_PATH,
-            torch_dtype=torch.float16,
-            low_cpu_mem_usage=True,
-            local_files_only=settings.INVESTIGATION_LOCAL_FILES_ONLY,
+            **load_kwargs,
         )
         model.eval()
+
         prompt = tokenizer.apply_chat_template(
             [
                 {"role": "system", "content": system_prompt},
