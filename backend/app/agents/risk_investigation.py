@@ -178,23 +178,41 @@ class RiskInvestigationAgent:
             raise AgentOutputError("Investigation model returned empty tagged output.")
 
         by_ref = {item.ref: item for item in evidence}
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
 
         def parse_line(prefix, required=True):
-            pattern = rf"(?im)^\\s*{prefix}\\s*(?:\\[([^\\]]+)\\])?\\s*:\\s*(.+?)\\s*$"
-            match = re.search(pattern, text)
-            if not match:
-                if required:
+            for line in lines:
+                if not line.upper().startswith(prefix):
+                    continue
+                remainder = line[len(prefix):].strip()
+                refs = []
+                if remainder.startswith("["):
+                    closing = remainder.find("]")
+                    if closing < 0:
+                        raise AgentOutputError(
+                            f"Investigation model output has malformed {prefix.lower()} references."
+                        )
+                    ref_text = remainder[1:closing]
+                    refs = [ref.strip() for ref in ref_text.split(",") if ref.strip()]
+                    remainder = remainder[closing + 1:].strip()
+                if not remainder.startswith(":"):
+                    continue
+                value = remainder[1:].strip()
+                if not value:
                     raise AgentOutputError(
-                        f"Investigation model output is missing the {prefix.lower()} line."
+                        f"Investigation model output contains an empty {prefix.lower()} line."
                     )
-                return "", []
-            refs = [ref.strip() for ref in (match.group(1) or "").split(",") if ref.strip()]
-            for ref in refs:
-                if ref not in by_ref:
-                    raise AgentOutputError(
-                        f"Investigation model output contains unknown evidence reference: {ref}."
-                    )
-            return match.group(2).strip(), refs
+                for ref in refs:
+                    if ref not in by_ref:
+                        raise AgentOutputError(
+                            f"Investigation model output contains unknown evidence reference: {ref}."
+                        )
+                return value, refs
+            if required:
+                raise AgentOutputError(
+                    f"Investigation model output is missing the {prefix.lower()} line."
+                )
+            return "", []
 
         summary, summary_refs = parse_line("SUMMARY")
         why, why_refs = parse_line("WHY")
