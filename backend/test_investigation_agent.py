@@ -150,6 +150,21 @@ def valid_generation():
     }
 
 
+def compact_generation():
+    return {
+        "summary": "SupplySentry records a port closure affecting a container shipment.",
+        "summary_refs": ["E1", "E2"],
+        "why_it_matters": "The recorded logistics risk may warrant human review.",
+        "why_refs": ["E1", "E2"],
+        "supporting_evidence": "The platform risk record has severity High and score 82.",
+        "supporting_refs": ["E2"],
+        "related_intelligence": "Another logistics event is recorded in the same location.",
+        "related_refs": ["E6"],
+        "next": "A user should verify the current terminal status before taking action.",
+        "next_refs": ["E1"],
+    }
+
+
 class FakeProvider(BaseLLMProvider):
     name = "fake-grounded-provider"
 
@@ -227,6 +242,28 @@ def test_agent_generates_cited_dynamic_response(investigation_db, target_graph):
     assert response.decision_support_only is True
     assert bundle["event"]["title"] in provider.calls[0]["user_prompt"]
     assert "cancel all shipments" not in response.sections.investigation_summary[0].text
+
+
+def test_agent_normalizes_compact_model_output(investigation_db, target_graph):
+    response = RiskInvestigationAgent(
+        FakeProvider(compact_generation())
+    ).investigate(
+        investigation_db,
+        target_graph["risk"].id,
+        actor=actor(),
+    )
+
+    assert response.sections.investigation_summary[0].text.startswith(
+        "SupplySentry records"
+    )
+    assert response.sections.investigation_summary[0].evidence_refs == ["E1", "E2"]
+    assert response.sections.investigation_summary[0].evidence_quotes[0].startswith(
+        "Event "
+    )
+    assert response.sections.related_intelligence[0].evidence_refs == ["E6"]
+    assert response.sections.what_to_investigate_next[0].statement_type == (
+        "agent_interpretation"
+    )
 
 
 def test_agent_rejects_unknown_evidence_reference(investigation_db, target_graph):
