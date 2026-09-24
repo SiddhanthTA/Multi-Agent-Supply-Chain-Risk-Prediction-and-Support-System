@@ -31,7 +31,13 @@ Do not claim certainty. Do not cancel shipments, contact anyone, change systems,
 or recommend an irreversible action without human review.
 Write concise investigation text grounded in the supplied evidence refs.
 Related events are signals, not proof of causation.
-Return exactly one compact JSON object and no markdown."""
+Return exactly these five lines and nothing else:
+SUMMARY [E1]: one concise sentence
+WHY [E1]: one concise sentence
+SUPPORTING [E2]: one concise sentence
+RELATED [E3]: one concise sentence, or RELATED: NONE
+NEXT [E1]: one concise sentence
+Use only existing evidence refs."""
 
 
 class RiskInvestigationAgent:
@@ -53,18 +59,17 @@ class RiskInvestigationAgent:
         schema = InvestigationGeneration.model_json_schema()
         model_evidence = self._model_evidence(evidence)
         user_prompt = (
-            "Investigate the target using only the compact evidence below. Return exactly "
-            "one JSON object and no markdown. Use this flat shape exactly:\n"
-            '{"summary":"short text","summary_refs":["E1"],'
-            '"why_it_matters":"short text","why_refs":["E1"],'
-            '"supporting_evidence":"short text","supporting_refs":["E2"],'
-            '"related_intelligence":"","related_refs":[],"next":"short text",'
-            '"next_refs":["E1"]}\n'
-            "Keep each text to one concise sentence. Use only existing evidence refs. "
-            "Use 1-2 refs per section. related_intelligence may be empty and then "
-            "related_refs must be []. Never invent facts or numbers. The backend "
-            "adds evidence quotes and performs final grounding validation.\n\n"
-            f"TARGET: {json.dumps(bundle['target'], separators=(',', ':'))}\n"
+            "Investigate the target using only the compact evidence below. "
+            "Do not repeat the evidence JSON. Do not output JSON, markdown, or commentary. "
+            "Return exactly five lines in this format:\\n"
+            "SUMMARY [E1]: one concise sentence\\n"
+            "WHY [E1]: one concise sentence\\n"
+            "SUPPORTING [E2]: one concise sentence\\n"
+            "RELATED [E3]: one concise sentence, or RELATED: NONE\\n"
+            "NEXT [E1]: one concise sentence\\n"
+            "Use only existing evidence refs and 1-2 refs per section. "
+            "Never invent facts or numbers. The backend performs final grounding validation.\\n\\n"
+            f"TARGET: {json.dumps(bundle['target'], separators=(',', ':'))}\\n"
             f"EVIDENCE: {json.dumps(model_evidence, default=str, separators=(',', ':'))}"
         )
         generated = self.provider.generate_json(
