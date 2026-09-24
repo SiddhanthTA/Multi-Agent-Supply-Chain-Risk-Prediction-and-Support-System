@@ -54,12 +54,26 @@ class RiskInvestigationAgent:
         schema = InvestigationGeneration.model_json_schema()
         user_prompt = (
             "Investigate the target using only the evidence below.\n"
-            "Answer concisely under these sections: investigation_summary, "
-            "why_this_matters, supporting_evidence, related_intelligence, "
-            "and what_to_investigate_next. If related intelligence is absent, "
-            "return an empty list and say evidence is insufficient in a cited "
-            "statement. Mark interpretations as agent_interpretation.\n\n"
-            f"OUTPUT_SCHEMA:\n{json.dumps(schema, separators=(',', ':'))}\n\n"
+            "Return exactly one JSON object and no markdown. Use this exact compact "
+            "shape:\n"
+            '{"sections":{"investigation_summary":[{"text":"...","statement_type":"fact",'
+            '"evidence_refs":["E1"],"evidence_quotes":["short exact phrase"]}],'
+            '"why_this_matters":[{"text":"...","statement_type":"agent_interpretation",'
+            '"evidence_refs":["E1"],"evidence_quotes":["short exact phrase"]}],'
+            '"supporting_evidence":[{"text":"...","statement_type":"fact",'
+            '"evidence_refs":["E1"],"evidence_quotes":["short exact phrase"]}],'
+            '"related_intelligence":[],"what_to_investigate_next":[{"text":"...",'
+            '"statement_type":"agent_interpretation","evidence_refs":["E1"],'
+            '"evidence_quotes":["short exact phrase"]}]}}\n'
+            "Rules: keep every text concise; use only evidence refs that exist; "
+            "use 1-2 evidence refs per statement; use one short exact quote from "
+            "the cited evidence; never invent facts or numbers. Use fact only for "
+            "retrieved event/risk/related-event/location/correlation evidence, "
+            "model_prediction only for prediction evidence, "
+            "platform_recommendation only for recommendation evidence, and "
+            "agent_interpretation when drawing an interpretation from cited evidence. "
+            "Each required section must contain exactly one statement. "
+            "related_intelligence may be empty when no related evidence exists.\n\n"
             f"UNTRUSTED_EVIDENCE:\n{json.dumps(bundle, default=str, separators=(',', ':'))}"
         )
         generated = self.provider.generate_json(
