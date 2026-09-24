@@ -79,11 +79,11 @@ class Settings(BaseSettings):
     # Risk Investigation Agent
     # -----------------------------------------
     INVESTIGATION_PROVIDER: str = "local"
-    INVESTIGATION_MODEL_PATH: str = "HuggingFaceTB/SmolLM2-360M-Instruct"
-    INVESTIGATION_MODEL_NAME: str = "SmolLM2-360M-Instruct"
+    INVESTIGATION_MODEL_PATH: str = "HuggingFaceTB/SmolLM2-135M-Instruct"
+    INVESTIGATION_MODEL_NAME: str = "SmolLM2-135M-Instruct"
     INVESTIGATION_CONTEXT_TOKENS: int = 2048
-    INVESTIGATION_MAX_NEW_TOKENS: int = 160
-    INVESTIGATION_TIMEOUT_SECONDS: int = 180
+    INVESTIGATION_MAX_NEW_TOKENS: int = 120
+    INVESTIGATION_TIMEOUT_SECONDS: int = 120
     INVESTIGATION_ALLOWED_ROLES: str = "admin,analyst"
     INVESTIGATION_LOCAL_FILES_ONLY: bool = True
     INVESTIGATION_DEBUG: bool = False
