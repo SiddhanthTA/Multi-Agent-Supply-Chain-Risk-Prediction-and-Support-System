@@ -51,19 +51,21 @@ class RiskInvestigationAgent:
             actor=actor,
         )
         schema = InvestigationGeneration.model_json_schema()
+        model_evidence = self._model_evidence(evidence)
         user_prompt = (
-            "Investigate the target using only the evidence below. Return exactly "
+            "Investigate the target using only the compact evidence below. Return exactly "
             "one JSON object and no markdown. Use this flat shape exactly:\n"
             '{"summary":"short text","summary_refs":["E1"],'
             '"why_it_matters":"short text","why_refs":["E1"],'
             '"supporting_evidence":"short text","supporting_refs":["E2"],'
             '"related_intelligence":"","related_refs":[],"next":"short text",'
             '"next_refs":["E1"]}\n'
-            "Rules: keep every text concise; use only existing evidence refs; "
-            "use 1-2 refs per section; related_intelligence may be empty and then "
-            "related_refs must be []; never invent facts or numbers. The backend "
-            "will add evidence quotes and enforce grounding.\n\n"
-            f"UNTRUSTED_EVIDENCE:\n{json.dumps(bundle, default=str, separators=(',', ':'))}"
+            "Keep each text to one concise sentence. Use only existing evidence refs. "
+            "Use 1-2 refs per section. related_intelligence may be empty and then "
+            "related_refs must be []. Never invent facts or numbers. The backend "
+            "adds evidence quotes and performs final grounding validation.\n\n"
+            f"TARGET: {json.dumps(bundle['target'], separators=(',', ':'))}\n"
+            f"EVIDENCE: {json.dumps(model_evidence, default=str, separators=(',', ':'))}"
         )
         generated = self.provider.generate_json(
             system_prompt=SYSTEM_PROMPT,
@@ -89,6 +91,86 @@ class RiskInvestigationAgent:
                 "This investigation uses SupplySentry structured data only and performs no external verification.",
             ],
         )
+
+    @staticmethod
+    def _model_evidence(evidence):
+        compact = []
+        for item in evidence:
+            data = item.data
+            if item.evidence_type == "event":
+                data = {
+                    "id": data.get("id"),
+                    "title": data.get("title"),
+                    "description": (data.get("description") or "")[:600],
+                    "location": data.get("location"),
+                    "category": data.get("category"),
+                    "severity": data.get("severity"),
+                    "status": data.get("status"),
+                    "event_time": data.get("event_time"),
+                }
+            elif item.evidence_type == "risk":
+                data = {
+                    "id": data.get("id"),
+                    "risk_name": data.get("risk_name"),
+                    "risk_type": data.get("risk_type"),
+                    "risk_score": data.get("risk_score"),
+                    "severity": data.get("severity"),
+                    "probability": data.get("probability"),
+                    "status": data.get("status"),
+                }
+            elif item.evidence_type == "prediction":
+                data = {
+                    "id": data.get("id"),
+                    "predicted_risk": data.get("predicted_risk"),
+                    "confidence_score": data.get("confidence_score"),
+                    "predicted_severity": data.get("predicted_severity"),
+                    "prediction_model": data.get("prediction_model"),
+                    "prediction_status": data.get("prediction_status"),
+                }
+            elif item.evidence_type == "platform_recommendation":
+                data = {
+                    "recommendation_title": data.get("recommendation_title"),
+                    "recommendation_text": (data.get("recommendation_text") or "")[:500],
+                    "priority": data.get("priority"),
+                    "status": data.get("status"),
+                }
+            elif item.evidence_type == "related_event":
+                data = {
+                    "id": data.get("id"),
+                    "title": data.get("title"),
+                    "description": (data.get("description") or "")[:250],
+                    "location": data.get("location"),
+                    "category": data.get("category"),
+                    "event_time": data.get("event_time"),
+                    "highest_risk_score": data.get("highest_risk_score"),
+                    "similarity_reasons": data.get("similarity_reasons"),
+                }
+            elif item.evidence_type == "location_context":
+                data = {
+                    "location": data.get("location"),
+                    "event_count": data.get("event_count"),
+                    "risk_count": data.get("risk_count"),
+                    "active_risk_count": data.get("active_risk_count"),
+                    "high_or_critical_count": data.get("high_or_critical_count"),
+                    "top_risk_categories": data.get("top_risk_categories"),
+                    "latest_events": data.get("latest_events"),
+                }
+            elif item.evidence_type == "correlation":
+                data = {
+                    "location": data.get("location"),
+                    "active_risks": data.get("active_risks"),
+                    "categories": data.get("categories"),
+                    "overall_score": data.get("overall_score"),
+                    "overall_risk": data.get("overall_risk"),
+                    "interpretation": data.get("interpretation"),
+                }
+            compact.append({
+                "ref": item.ref,
+                "type": item.evidence_type,
+                "label": item.label,
+                "data": data,
+            })
+        return compact
 
     @staticmethod
     def _normalize_generation(generated, evidence):
