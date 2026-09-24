@@ -173,11 +173,63 @@ class RiskInvestigationAgent:
         return compact
 
     @staticmethod
+    def _parse_tagged_output(text, evidence):
+        if not isinstance(text, str) or not text.strip():
+            raise AgentOutputError("Investigation model returned empty tagged output.")
+
+        by_ref = {item.ref: item for item in evidence}
+
+        def parse_line(prefix, required=True):
+            pattern = rf"(?im)^\\s*{prefix}\\s*(?:\\[([^\\]]+)\\])?\\s*:\\s*(.+?)\\s*$"
+            match = re.search(pattern, text)
+            if not match:
+                if required:
+                    raise AgentOutputError(
+                        f"Investigation model output is missing the {prefix.lower()} line."
+                    )
+                return "", []
+            refs = [ref.strip() for ref in (match.group(1) or "").split(",") if ref.strip()]
+            for ref in refs:
+                if ref not in by_ref:
+                    raise AgentOutputError(
+                        f"Investigation model output contains unknown evidence reference: {ref}."
+                    )
+            return match.group(2).strip(), refs
+
+        summary, summary_refs = parse_line("SUMMARY")
+        why, why_refs = parse_line("WHY")
+        supporting, supporting_refs = parse_line("SUPPORTING")
+        next_text, next_refs = parse_line("NEXT")
+        related, related_refs = parse_line("RELATED", required=False)
+
+        if related.upper() == "NONE":
+            related, related_refs = "", []
+
+        return {
+            "summary": summary,
+            "summary_refs": summary_refs,
+            "why_it_matters": why,
+            "why_refs": why_refs,
+            "supporting_evidence": supporting,
+            "supporting_refs": supporting_refs,
+            "related_intelligence": related,
+            "related_refs": related_refs,
+            "next": next_text,
+            "next_refs": next_refs,
+        }
+
+    @staticmethod
     def _normalize_generation(generated, evidence):
         if not isinstance(generated, dict):
             raise AgentOutputError("Investigation output must be a JSON object.")
         if "sections" in generated:
             return generated
+
+        if isinstance(generated.get("text"), str):
+            generated = RiskInvestigationAgent._parse_tagged_output(
+                generated["text"],
+                evidence,
+            )
 
         required = (
             "summary",
