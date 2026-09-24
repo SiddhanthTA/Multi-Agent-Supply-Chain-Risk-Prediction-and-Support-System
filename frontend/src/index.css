@@ -1,0 +1,171 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+    --radius: 0.5rem;
+  }
+
+  .light {
+    --background: 215 35% 97%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 215 32% 91%;
+    --secondary-foreground: 215 19% 35%;
+    --muted: 215 32% 95%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 218 89% 95%;
+    --accent-foreground: 221 83% 53%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 212 36% 85%;
+    --input: 212 36% 85%;
+    --ring: 221.2 83.2% 53.3%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased selection:bg-primary/20;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  
+  /* Fix native select option visibility in dark mode */
+  select option {
+    @apply bg-background text-foreground;
+  }
+
+  /* Custom Light Mode UI Refinements */
+  .bg-sidebar {
+    background-color: hsl(var(--card));
+  }
+  .light .bg-sidebar {
+    background-color: hsl(0 0% 100%);
+  }
+  
+  .bg-nav-active {
+    background-color: hsl(var(--muted));
+  }
+  .light .bg-nav-active {
+    background-color: hsl(218 89% 95%);
+  }
+  
+  .bg-nav-hover {
+    background-color: transparent;
+  }
+  .light .bg-nav-hover {
+    background-color: hsl(215 32% 95%);
+  }
+  
+  .light .shadow-sm {
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03), 0 1px 2px rgba(15, 23, 42, 0.02);
+  }
+  
+  .bg-table-header {
+    background-color: transparent;
+  }
+  .light .bg-table-header {
+    background-color: hsl(215 35% 98%);
+  }
+  
+  .border-table {
+    border-color: hsl(var(--border));
+  }
+  .light .border-table {
+    border-color: hsl(212 36% 88%);
+  }
+  
+  .bg-table-hover {
+    background-color: hsl(var(--muted) / 0.5);
+  }
+  .light .bg-table-hover {
+    background-color: hsl(215 32% 97%);
+  }
+  
+  /* Input and Select Visibility Fixes for Light Theme */
+  .light input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="file"]),
+  .light select {
+    background-color: hsl(0 0% 100%) !important;
+    border-color: hsl(212 36% 80%) !important;
+    color: hsl(222 47% 11%) !important;
+  }
+  
+  .light input:not([type="checkbox"]):not([type="radio"]):hover,
+  .light select:hover {
+    border-color: hsl(212 36% 70%) !important;
+  }
+
+  .light input:not([type="checkbox"]):not([type="radio"]):focus,
+  .light select:focus {
+    border-color: hsl(var(--primary)) !important;
+    box-shadow: 0 0 0 2px hsla(var(--primary), 0.2) !important;
+  }
+  
+  /* KPI Semantic Borders on Light Theme using :has() for dynamic targeting */
+  .light .rounded-2xl:has(.rounded-full > .text-primary) { border-top: 3px solid hsl(var(--primary)); }
+  .light .rounded-2xl:has(.rounded-full > .text-amber-500) { border-top: 3px solid hsl(38 92% 50%); }
+  .light .rounded-2xl:has(.rounded-full > .text-destructive) { border-top: 3px solid hsl(0 84% 60%); }
+  .light .rounded-2xl:has(.rounded-full > .text-purple-500) { border-top: 3px solid hsl(270 70% 60%); }
+  .light .rounded-2xl:has(.rounded-full > .text-green-500) { border-top: 3px solid hsl(142 71% 45%); }
+  .light .rounded-2xl:has(.rounded-full > .text-blue-500) { border-top: 3px solid hsl(221 83% 53%); }
+}
+
+@layer utilities {
+  .animate-in {
+    animation: animate-in 0.5s ease-out forwards;
+  }
+  .fade-in {
+    opacity: 0;
+    animation-name: fade-in;
+  }
+  .slide-in-bottom {
+    transform: translateY(20px);
+    opacity: 0;
+    animation-name: slide-in-bottom;
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-in-bottom {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}

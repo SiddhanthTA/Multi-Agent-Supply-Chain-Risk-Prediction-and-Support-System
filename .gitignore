@@ -1,0 +1,50 @@
+# Virtual environment
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Environment
+.env
+
+# IDE
+.vscode/
+
+# Hugging Face checkpoints
+backend/models/risk_classifier/checkpoint-*/
+
+# Training artifacts
+*.pt
+*.pth
+
+backend/models/risk_classifier/model.safetensors
+backend/models/risk_classifier/checkpoint-*/
+
+*.pt
+*.pth
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# AI training checkpoints
+backend/models/risk_classifier/checkpoint-*/
+backend/models/**/checkpoint-*/
+**/optimizer.pt
+
+# Training artifacts
+*.ckpt
+# Trained AI models - stored separately on Google Drive
+backend/models/
+
+# Local SQLite database
+backend/supply_chain.db
+
+# Local ingestion diagnostics
+backend/logs/
+
