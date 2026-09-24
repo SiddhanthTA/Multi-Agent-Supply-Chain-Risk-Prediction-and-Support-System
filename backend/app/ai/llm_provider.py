@@ -91,7 +91,27 @@ class LocalTransformersProvider(BaseLLMProvider):
                 raise AgentOutputError(
                     "The investigation model worker did not return generated text."
                 )
-            return _parse_json_object(envelope["text"])
+            try:
+                return _parse_json_object(envelope["text"])
+            except AgentOutputError as exc:
+                if not settings.INVESTIGATION_DEBUG:
+                    raise
+                diagnostics = envelope.get("diagnostics", {})
+                raw_output = envelope["text"]
+                if len(raw_output) > 5000:
+                    raw_output = raw_output[:5000] + "\\n...[truncated]"
+                detail = (
+                    f"input_tokens={diagnostics.get('input_tokens', 'unknown')}, "
+                    f"raw_input_tokens={diagnostics.get('raw_input_tokens', 'unknown')}, "
+                    f"context_truncated={diagnostics.get('context_truncated', 'unknown')}, "
+                    f"output_tokens={diagnostics.get('output_tokens', 'unknown')}, "
+                    f"max_new_tokens={diagnostics.get('max_new_tokens', max_tokens)}, "
+                    f"ended_with_eos={diagnostics.get('ended_with_eos', 'unknown')}, "
+                    f"prompt_chars={diagnostics.get('prompt_chars', 'unknown')}"
+                )
+                raise AgentOutputError(
+                    f"{exc} [debug: {detail}; raw_output={raw_output!r}]"
+                ) from exc
         finally:
             self._lock.release()
 
