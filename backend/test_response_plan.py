@@ -1,4 +1,4 @@
-"""Focused tests for the DEMO Agent 2 deterministic response-plan templates.
+"""Focused tests for runtime response-plan generation.
 
 These assert plan construction only. They do not run Agent 1 inference.
 """
@@ -87,7 +87,7 @@ def test_diesel_company_relevant_scenario():
     assert set(result["matched_dependencies"]) == {"Diesel", "India"}
     assert "Procurement" in result["responsible_areas"]
     assert "Logistics" in result["responsible_areas"]
-    assert "Actual fuel consumption" in " ".join(result["information_required"])
+    assert "Usage volumes" in " ".join(result["information_required"])
 
 
 def test_semiconductor_company_relevant_scenario():
@@ -103,7 +103,7 @@ def test_semiconductor_company_relevant_scenario():
 
     assert result["scenario"] == "materials_and_supply"
     assert result["matched_dependencies"] == ["Semiconductors"]
-    assert "material usage" in " ".join(result["information_required"]).lower()
+    assert "supplier concentration" in " ".join(result["information_required"]).lower()
 
 
 def test_logistics_scenario_is_supported():
@@ -132,7 +132,7 @@ def test_no_company_relevance_states_no_exposure_is_assumed():
 
     assert result["matched_dependencies"] == []
     text = " ".join(result["notes"])
-    assert "No configured company dependency" in text
+    assert "no identified configured dependency match" in text
     assert "no company-specific exposure is assumed" in text
 
 
@@ -143,7 +143,7 @@ def test_missing_company_profile_still_produces_a_plan():
     assert result["company_name"] is None
     assert result["scenario"] == "fuel_and_energy"
     assert len(result["response_options"]) == 3
-    assert "not configured for this account" in " ".join(result["notes"])
+    assert "No company profile is configured" in " ".join(result["notes"])
 
 
 def test_platform_recommendation_is_preserved_separately():
@@ -180,8 +180,8 @@ def test_plan_contains_no_invented_quantitative_exposure():
 
 def test_plan_is_flagged_as_demo_template():
     result = plan()
-    assert result["is_demo_template"] is True
-    assert result["generated_by"] == "deterministic-response-plan"
+    assert result["is_demo_template"] is False
+    assert result["generated_by"] == "runtime-context-response-planner"
     assert result["decision_support_only"] is True
 
 
@@ -209,6 +209,34 @@ def test_duplicate_dependency_values_across_categories_are_listed_once():
     )
 
     assert result["matched_dependencies"] == ["Semiconductors", "China"]
+
+
+def test_response_plan_changes_with_event_context():
+    first = plan(
+        event=event(
+            "Diesel export restriction raises fuel costs",
+            "Diesel prices increase after an export restriction.",
+            "Energy",
+        )
+    )
+    second = plan(
+        event=event(
+            "Port closure delays semiconductor shipments",
+            "A port closure is delaying chip shipments.",
+            "Logistics",
+        ),
+        company_relevance={
+            "relevance": "direct",
+            "matched_dependencies": [
+                {"category": "materials", "value": "Semiconductors"},
+                {"category": "logistics", "value": "Ports"},
+            ],
+        },
+    )
+    assert first["scenario"] != second["scenario"]
+    assert first["risk_summary"] != second["risk_summary"]
+    assert first["response_options"][0]["name"] != second["response_options"][0]["name"]
+    assert first["information_required"] != second["information_required"]
 
 
 @pytest.fixture()
@@ -330,9 +358,9 @@ def test_response_plan_endpoint_does_not_mutate_intelligence(plan_db):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["is_demo_template"] is True
+    assert body["is_demo_template"] is False
     assert body["company_name"] == "Test Electronics"
-    assert body["generated_by"] == "deterministic-response-plan"
+    assert body["generated_by"] == "runtime-context-response-planner"
     assert len(body["response_options"]) == 3
 
     # Intelligence and company data are untouched; only the generated plan is
