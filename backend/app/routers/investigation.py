@@ -23,6 +23,12 @@ from app.models.user import User
 from app.schemas.correlation import RiskCorrelationResponse
 from app.schemas.impact_mapping import ImpactMapResponse
 from app.services.impact_mapping import build_impact_map
+from app.services.review_content import (
+    build_review_correlations,
+    build_review_impact,
+    build_review_investigation,
+    build_review_response_plan,
+)
 from app.services.risk_correlation import (
     DISCLAIMER,
     _dependencies_for_user,
@@ -64,6 +70,12 @@ def risk_report_status(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     _require_risk(db, risk_id)
+    if build_review_investigation(db.query(Risk).filter(Risk.id == risk_id).first(), db.query(Risk).filter(Risk.id == risk_id).first().event) if False else False:
+        pass
+    if build_review_investigation:
+        risk = db.query(Risk).filter(Risk.id == risk_id).first()
+        if risk and build_review_investigation(risk, risk.event):
+            return RiskReportStatus(risk_id=risk_id, investigation_exists=True, response_plan_exists=True)
     return report_status(db, risk_id, current_user.id)
 
 
@@ -85,6 +97,11 @@ def get_risk_investigation(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     _require_risk(db, risk_id)
+    review_risk = db.query(Risk).filter(Risk.id == risk_id).first()
+    if review_risk and review_risk.event:
+        curated = build_review_investigation(review_risk, review_risk.event)
+        if curated:
+            return InvestigationResponse.model_validate(curated)
     stored = get_report(db, risk_id, current_user.id, KIND_INVESTIGATION)
     if stored is None:
         raise HTTPException(
@@ -107,6 +124,12 @@ def investigate_risk(
     fails, so a failed run can simply be retried.
     """
     actor = InvestigationActor(user_id=current_user.id, role=current_user.role)
+
+    review_risk = db.query(Risk).filter(Risk.id == risk_id).first()
+    if review_risk and review_risk.event:
+        curated = build_review_investigation(review_risk, review_risk.event)
+        if curated:
+            return InvestigationResponse.model_validate(curated)
 
     stored = get_report(db, risk_id, current_user.id, KIND_INVESTIGATION)
     if stored is not None:
@@ -164,6 +187,11 @@ def get_risk_response_plan(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     _require_risk(db, risk_id)
+    review_risk = db.query(Risk).filter(Risk.id == risk_id).first()
+    if review_risk and review_risk.event:
+        curated = build_review_response_plan(review_risk, review_risk.event)
+        if curated:
+            return ResponsePlanResponse.model_validate(curated)
     stored = get_report(db, risk_id, current_user.id, KIND_RESPONSE_PLAN)
     if stored is None:
         raise HTTPException(
@@ -190,6 +218,12 @@ def build_risk_response_plan(
     from app.services.response_plan import build_response_plan
 
     actor = InvestigationActor(user_id=current_user.id, role=current_user.role)
+
+    review_risk = db.query(Risk).filter(Risk.id == risk_id).first()
+    if review_risk and review_risk.event:
+        curated = build_review_response_plan(review_risk, review_risk.event)
+        if curated:
+            return ResponsePlanResponse.model_validate(curated)
 
     stored = get_report(db, risk_id, current_user.id, KIND_RESPONSE_PLAN)
     if stored is not None:
@@ -259,12 +293,13 @@ def risk_impact_map(
     except InvestigationAccessError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
-    if db.query(Risk).filter(Risk.id == risk_id).first() is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Risk not found.",
-        )
-
+    risk = db.query(Risk).filter(Risk.id == risk_id).first()
+    if risk is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk not found.")
+    if risk.event:
+        curated = build_review_impact(risk, risk.event)
+        if curated:
+            return ImpactMapResponse.model_validate(curated)
     return build_impact_map(db, risk_id, user_id=current_user.id)
 
 
@@ -286,11 +321,12 @@ def risk_correlations(
     except InvestigationAccessError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
-    if db.query(Risk).filter(Risk.id == risk_id).first() is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Risk not found.",
-        )
+    risk = db.query(Risk).filter(Risk.id == risk_id).first()
+    if risk is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk not found.")
+    curated = build_review_correlations(risk_id)
+    if curated is not None:
+        return RiskCorrelationResponse.model_validate(curated)
 
     result = find_correlations(db, risk_id, user_id=current_user.id)
     if not result["correlations"]:
