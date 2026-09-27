@@ -356,8 +356,8 @@ export default function Risks() {
                   {paginatedRisks.map(risk => (
                     <TableRow 
                       key={risk.id} 
-                      className="cursor-pointer group"
-                      onClick={() => navigate(`/risks/${risk.id}`)}
+                      className={risk.location === "United States" ? "cursor-pointer group" : "group"}
+                      onClick={() => { if (risk.location === "United States") navigate(`/risks/${risk.id}`); }}
                     >
                       <TableCell className="pl-6">
                         <div className="font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1" title={risk.risk_name}>
