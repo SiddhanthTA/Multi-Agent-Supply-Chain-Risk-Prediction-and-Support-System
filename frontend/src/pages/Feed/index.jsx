@@ -27,7 +27,7 @@ const fetchFeedData = async (location) => {
     feed.push({ ...item, type: 'Event', timestamp: item.created_at ? new Date(item.created_at) : new Date(0) });
   });
   risks.forEach(item => {
-    feed.push({ ...item, type: 'Risk', timestamp: item.created_at ? new Date(item.created_at) : new Date(0) });
+    feed.push({ ...item, id: item.risk_id, type: 'Risk', timestamp: item.created_at ? new Date(item.created_at) : new Date(0) });
   });
   predictionsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id))).forEach(item => {
     feed.push({ ...item, type: 'Prediction', timestamp: item.created_at ? new Date(item.created_at) : new Date(0) });
