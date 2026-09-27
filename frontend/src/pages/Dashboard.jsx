@@ -84,7 +84,7 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const [selectedLocation, setSelectedLocation] = useState(() =>
     normalizeWorkspaceLocation(localStorage.getItem('supplysentry-location')));
-  const [weatherCity, setWeatherCity] = useState('');
+  const [weatherLocationId, setWeatherLocationId] = useState(null);
   const [weatherRefreshError, setWeatherRefreshError] = useState('');
 
   const { data, isLoading, isError, error } = useQuery({
@@ -122,15 +122,15 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!weatherEnabled) {
-      setWeatherCity('');
+      setWeatherLocationId(null);
       return;
     }
-    if (!weatherCity || !weatherLocations.some((location) => location.name === weatherCity)) {
-      setWeatherCity(weatherLocations[0]?.name || '');
+    if (!weatherLocationId || !weatherLocations.some((location) => location.id === weatherLocationId)) {
+      setWeatherLocationId(weatherLocations[0]?.id ?? null);
     }
-  }, [weatherEnabled, weatherCity, weatherLocations]);
+  }, [weatherEnabled, weatherLocationId, weatherLocations]);
 
-  const selectedWeather = weatherStates.find((state) => state.location.name === weatherCity) || weatherStates[0] || null;
+  const selectedWeather = weatherStates.find((state) => state.location.id === weatherLocationId) || null;
 
   const weatherRefresh = useMutation({
     mutationFn: async () => {
@@ -204,8 +204,8 @@ export default function Dashboard() {
         <DashboardWeatherCard
           states={weatherStates}
           selected={selectedWeather}
-          city={weatherCity}
-          onCityChange={setWeatherCity}
+          locationId={weatherLocationId}
+          onLocationChange={setWeatherLocationId}
           onRefresh={() => weatherRefresh.mutate()}
           isRefreshing={weatherRefresh.isPending}
           error={weatherRefreshError}
@@ -233,7 +233,7 @@ export default function Dashboard() {
   );
 }
 
-function DashboardWeatherCard({ states, selected, city, onCityChange, onRefresh, isRefreshing, error }) {
+function DashboardWeatherCard({ states, selected, locationId, onLocationChange, onRefresh, isRefreshing, error }) {
   const weatherEvent = selected?.weatherEvent;
   const risk = selected?.risk;
 
@@ -251,13 +251,13 @@ function DashboardWeatherCard({ states, selected, city, onCityChange, onRefresh,
           </div>
           <div className="flex items-center gap-2">
             <select
-              value={city}
-              onChange={(event) => onCityChange(event.target.value)}
+              value={locationId ?? ''}
+              onChange={(event) => onLocationChange(Number(event.target.value))}
               className="h-9 min-w-44 rounded-lg border border-input bg-background px-3 text-sm"
               aria-label="Weather city"
             >
               {states.map((state) => (
-                <option key={state.location.id} value={state.location.name}>{state.location.name}</option>
+                <option key={state.location.id} value={state.location.id}>{state.location.name}</option>
               ))}
             </select>
             <Button variant="outline" size="sm" onClick={onRefresh} disabled={!selected || isRefreshing}>
