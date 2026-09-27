@@ -4,12 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
-  CloudRain,
   MapPin,
   RefreshCcw,
   ShieldAlert,
-  Thermometer,
-  Wind,
 } from 'lucide-react';
 import api from '@/services/api';
 import { Badge } from '@/components/ui/Badge';
@@ -17,10 +14,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import {
-  buildWeatherCityStates,
-  getWeatherLocationsForScope,
   normalizeWorkspaceLocation,
-  refreshWeatherLocations,
   WORKSPACE_LOCATIONS,
 } from '@/lib/locationWorkspace';
 
@@ -84,8 +78,6 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const [selectedLocation, setSelectedLocation] = useState(() =>
     normalizeWorkspaceLocation(localStorage.getItem('supplysentry-location')));
-  const [weatherLocationId, setWeatherLocationId] = useState(null);
-  const [weatherRefreshError, setWeatherRefreshError] = useState('');
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['dashboardWorkspace', selectedLocation],
@@ -109,43 +101,6 @@ export default function Dashboard() {
     [currentRisks],
   );
 
-  const weatherEnabled = selectedLocation === 'India' || selectedLocation === 'United States';
-  const weatherLocations = useMemo(
-    () => weatherEnabled ? getWeatherLocationsForScope(data?.locations || [], selectedLocation) : [],
-    [data?.locations, selectedLocation, weatherEnabled],
-  );
-  const weatherStates = useMemo(
-    () => buildWeatherCityStates(data?.locations || [], data?.weatherEvents || [], data?.weatherRisks || [])
-      .filter((state) => weatherLocations.some((location) => location.id === state.location.id)),
-    [data?.locations, data?.weatherEvents, data?.weatherRisks, weatherLocations],
-  );
-
-  useEffect(() => {
-    if (!weatherEnabled) {
-      setWeatherLocationId(null);
-      return;
-    }
-    if (!weatherLocationId || !weatherLocations.some((location) => location.id === weatherLocationId)) {
-      setWeatherLocationId(weatherLocations[0]?.id ?? null);
-    }
-  }, [weatherEnabled, weatherLocationId, weatherLocations]);
-
-  const selectedWeatherState = weatherStates.find((state) => state.location.id === weatherLocationId) || null;
-  const selectedWeather = selectedWeatherState || (weatherLocations.find((location) => location.id === weatherLocationId)
-    ? { location: weatherLocations.find((location) => location.id === weatherLocationId), weatherEvent: null, risk: null }
-    : null);
-
-  const weatherRefresh = useMutation({
-    mutationFn: async () => {
-      if (!selectedWeather) return null;
-      return api.post('/events/weather/store', null, {
-        params: { location: `${selectedWeather.location.name}, ${selectedWeather.location.country}` },
-      });
-    },
-    onMutate: () => setWeatherRefreshError(''),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dashboardWorkspace', selectedLocation] }),
-    onError: (err) => setWeatherRefreshError(err?.response?.data?.detail || err?.message || 'Unable to refresh weather.'),
-  });
 
   const changeLocation = (value) => {
     setSelectedLocation(value);
@@ -203,23 +158,6 @@ export default function Dashboard() {
         <KpiCard title="Current Risks" value={isLoading ? <Skeleton className="h-6 w-12" /> : currentRisks.length} icon={Activity} />
       </section>
 
-      {weatherEnabled && (
-        <DashboardWeatherCard
-          states={weatherLocations.map((location) => weatherStates.find((state) => state.location.id === location.id) || {
-            location,
-            canonicalLocation: `${location.name}, ${location.country}`,
-            weatherEvent: null,
-            risk: null,
-          })}
-          selected={selectedWeather}
-          locationId={weatherLocationId}
-          onLocationChange={setWeatherLocationId}
-          onRefresh={() => weatherRefresh.mutate()}
-          isRefreshing={weatherRefresh.isPending}
-          error={weatherRefreshError}
-        />
-      )}
-
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -241,99 +179,6 @@ export default function Dashboard() {
   );
 }
 
-function DashboardWeatherCard({ states, selected, locationId, onLocationChange, onRefresh, isRefreshing, error }) {
-  const weatherEvent = selected?.weatherEvent;
-  const risk = selected?.risk;
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <CloudRain className="h-4 w-4 text-primary" /> Weather Monitoring
-            </CardTitle>
-            <CardDescription>
-              Current weather for the selected {states[0]?.location?.country || 'region'} monitoring location.
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={locationId ?? ''}
-              onChange={(event) => onLocationChange(Number(event.target.value))}
-              className="h-9 min-w-44 rounded-lg border border-input bg-background px-3 text-sm"
-              aria-label="Weather city"
-            >
-              {states.map((state) => (
-                <option key={state.location.id} value={state.location.id}>{state.location.name}</option>
-              ))}
-            </select>
-            <Button variant="outline" size="sm" onClick={onRefresh} disabled={!selected || isRefreshing}>
-              <RefreshCcw className={`mr-2 h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              {isRefreshing ? 'Refreshing…' : 'Refresh'}
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {!selected ? (
-          <EmptyState text="No monitored weather locations are configured for this workspace." />
-        ) : (
-          <div className="grid gap-4 md:grid-cols-[1fr_1.5fr]">
-            <div className="rounded-xl border border-border/60 bg-muted/10 p-5">
-              <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">{selected.location.name}, {selected.location.country}</p>
-              <div className="mt-3 flex items-center gap-3">
-                <Thermometer className="h-6 w-6 text-primary" />
-                <span className="text-4xl font-semibold tracking-tight">
-                  {extractTemperature(weatherEvent?.description)}
-                </span>
-              </div>
-              <p className="mt-2 text-base font-medium">{weatherEvent?.title || 'Weather data not collected yet'}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{weatherEvent ? weatherEvent.description : 'Use Refresh to collect the current WeatherAPI observation.'}</p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <WeatherMetric icon={Wind} label="Wind" value={extractMetric(weatherEvent?.description, 'Wind')} suffix=" kph" />
-              <WeatherMetric icon={Activity} label="Humidity" value={extractMetric(weatherEvent?.description, 'Humidity')} suffix="%" />
-              <WeatherMetric icon={CloudRain} label="Rain" value={extractMetric(weatherEvent?.description, 'Precipitation')} suffix=" mm" />
-            </div>
-            <div className="md:col-span-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              {risk?.severity && <Badge variant={String(risk.severity).toLowerCase()}>{risk.severity}</Badge>}
-              {risk?.risk_type && <Badge variant="outline">{risk.risk_type}</Badge>}
-              <span>
-                {weatherEvent?.event_time || weatherEvent?.created_at
-                  ? `Observed ${new Date(weatherEvent.event_time || weatherEvent.created_at).toLocaleString()}`
-                  : 'No observation yet'}
-              </span>
-              {error && <span className="text-destructive">{error}</span>}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function extractTemperature(description) {
-  const match = String(description || '').match(/Temperature:\s*([-+]?\d+(?:\.\d+)?)\s*°?C/i);
-  return match ? `${match[1]}°C` : 'Unavailable';
-}
-
-function extractMetric(description, label) {
-  const match = String(description || '').match(new RegExp(`${label}:\\s*([-+]?\\d+(?:\\.\\d+)?)`, 'i'));
-  return match ? match[1] : '—';
-}
-
-function WeatherMetric({ icon: Icon, label, value, suffix = '' }) {
-  return (
-    <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Icon className="h-4 w-4" />
-        {label}
-      </div>
-      <p className="mt-2 text-lg font-semibold">{value}{value !== '—' ? suffix : ''}</p>
-    </div>
-  );
-}
 
 function CurrentRiskCards({ risks, isLoading, onOpen }) {
   if (isLoading) return <Skeleton className="h-48 w-full" />;
