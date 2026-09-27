@@ -15,6 +15,14 @@ import CorrelationIntelligence from "@/pages/Correlation";
 import Profile from "@/pages/Profile";
 import Login from "@/pages/Auth/Login";
 import Register from "@/pages/Auth/Register";
+import CompanySetup from "@/pages/CompanySetup";
+import CompanyProfilePage from "@/pages/CompanyProfile";
+import RiskTrends from "@/pages/RiskTrends";
+import RiskInvestigationPage from "@/pages/Risks/Investigation";
+import RiskResponsePlanPage from "@/pages/Risks/ResponsePlan";
+import RiskCorrelationsPage from "@/pages/Risks/Correlations";
+import RiskSupplyChainImpactPage from "@/pages/Risks/SupplyChainImpact";
+import ResolvedRisks from "@/pages/ResolvedRisks";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 function App() {
@@ -22,6 +30,7 @@ function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/company-setup" element={<ProtectedRoute><CompanySetup /></ProtectedRoute>} />
       
       <Route path="/" element={<ProtectedRoute />}>
         <Route element={<DashboardLayout />}>
@@ -34,6 +43,12 @@ function App() {
         
         <Route path="risks" element={<Risks />} />
         <Route path="risks/:id" element={<RiskDetails />} />
+        <Route path="risk-trends" element={<RiskTrends />} />
+        <Route path="risks/:id/investigation" element={<RiskInvestigationPage />} />
+        <Route path="risks/:id/response-plan" element={<RiskResponsePlanPage />} />
+        <Route path="risks/:id/correlations" element={<RiskCorrelationsPage />} />
+        <Route path="risks/:id/impact" element={<RiskSupplyChainImpactPage />} />
+        <Route path="resolved-risks" element={<ResolvedRisks />} />
         
         <Route path="predictions" element={<Predictions />} />
         <Route path="predictions/:id" element={<PredictionDetails />} />
@@ -42,6 +57,7 @@ function App() {
         <Route path="recommendations/:id" element={<RecommendationDetails />} />
         
         <Route path="health" element={<SystemHealth />} />
+        <Route path="company-profile" element={<CompanyProfilePage />} />
         <Route path="profile" element={<Profile />} />
         
           {/* Fallback route */}

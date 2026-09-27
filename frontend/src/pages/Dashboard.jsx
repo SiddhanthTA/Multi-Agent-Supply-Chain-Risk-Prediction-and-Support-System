@@ -1,48 +1,105 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { formatDistanceToNow } from 'date-fns';
-import { Activity, AlertTriangle, BrainCircuit, CloudRain, Database, ExternalLink, MapPin, RefreshCcw, ShieldAlert } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  Building2,
+  CloudRain,
+  MapPin,
+  RefreshCcw,
+  ShieldAlert,
+} from 'lucide-react';
 import api from '@/services/api';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import WeatherRiskMap from '@/components/WeatherRiskMap';
-import { formatLocationDisplay } from '@/lib/locationDisplay';
 import {
   buildWeatherCityStates,
   filterEventsByWorkspace,
-  getWeatherLocationsForWorkspace,
+  getWeatherLocationsForScope,
+  matchesWorkspaceLocation,
   normalizeWorkspaceLocation,
   refreshWeatherLocations,
   WORKSPACE_LOCATIONS,
 } from '@/lib/locationWorkspace';
-import { composeEventIntelligence, getEventForRisk } from '@/lib/intelligenceComposition';
+import { companyRelevanceLevel } from '@/lib/riskInvestigation';
+import { fetchCurrentRisks, recentParams } from '@/lib/riskReports';
 
 const fetchDashboardData = async () => {
-  const [eventsRes, risksRes, predictionsRes, recommendationsRes, locationsRes] = await Promise.all([
-    api.get('/events/'), api.get('/risks/'), api.get('/predictions/'), api.get('/recommendations/'), api.get('/locations/'),
+  const [eventsRes, risksRes, locationsRes, companyRes] = await Promise.all([
+    api.get('/events/', { params: recentParams() }),
+    api.get('/risks/', { params: recentParams() }),
+    api.get('/locations/'),
+    api.get('/company-profile/relevance').catch(() => null),
   ]);
-  return { events: eventsRes.data, risks: risksRes.data, predictions: predictionsRes.data, recommendations: recommendationsRes.data, locations: locationsRes.data };
+  return {
+    events: eventsRes.data,
+    risks: risksRes.data,
+    locations: locationsRes.data,
+    companyRelevance: companyRes?.data || null,
+  };
 };
 
-function relativeTime(value) {
-  if (!value) return 'Time unavailable';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? 'Time unavailable' : formatDistanceToNow(date, { addSuffix: true });
+const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
+
+function SeverityBadge({ severity }) {
+  const value = String(severity || '').toLowerCase();
+  const variant = ['critical', 'high', 'medium', 'low'].includes(value) ? value : 'outline';
+  return <Badge variant={variant}>{severity || 'Unrated'}</Badge>;
 }
-function severityVariant(value) {
-  const normalized = String(value || '').toLowerCase();
-  return ['critical', 'high', 'medium', 'low'].includes(normalized) ? normalized : 'outline';
+
+function EmptyState({ text }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border/60 px-6 py-8 text-center text-sm text-muted-foreground">
+      {text}
+    </div>
+  );
 }
-function SeverityBadge({ severity }) { return <Badge variant={severityVariant(severity)}>{severity || 'Unrated'}</Badge>; }
+
+function WorkspaceMessage({ title, message }) {
+  return (
+    <div className="ss-page flex flex-col items-center justify-center gap-2 py-16 text-center">
+      <AlertTriangle className="h-8 w-8 text-destructive" />
+      <h2 className="text-lg font-semibold">{title}</h2>
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
+  );
+}
+
+function KpiCard({ title, value, icon: Icon, valueClass = '' }) {
+  return (
+    <div className="ss-metric">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-muted-foreground">{title}</span>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <p className={`mt-2 text-2xl font-semibold tabular-nums ${valueClass}`}>{value}</p>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [selectedLocation, setSelectedLocation] = useState(() => normalizeWorkspaceLocation(localStorage.getItem('supplysentry-location')));
-  const { data, isLoading, isError, error } = useQuery({ queryKey: ['dashboardWorkspace'], queryFn: fetchDashboardData, refetchInterval: 30000 });
+  const [selectedLocation, setSelectedLocation] = useState(() =>
+    normalizeWorkspaceLocation(localStorage.getItem('supplysentry-location')));
+  const [weatherScope] = useState('global');
+  const autoWeatherLoaded = useRef(false);
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['dashboardWorkspace'],
+    queryFn: fetchDashboardData,
+    refetchInterval: 30000,
+  });
+  const { data: currentRiskData } = useQuery({
+    queryKey: ['currentRisks'],
+    queryFn: fetchCurrentRisks,
+    staleTime: 60 * 1000,
+  });
+
   const weatherMutation = useMutation({
     mutationFn: (locations) => refreshWeatherLocations(
       locations,
@@ -51,79 +108,230 @@ export default function Dashboard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dashboardWorkspace'] }),
   });
 
-  const selectedDefinition = WORKSPACE_LOCATIONS.find((location) => location.id === selectedLocation) || WORKSPACE_LOCATIONS[0];
-  const filteredEvents = useMemo(() => filterEventsByWorkspace(data?.events, selectedLocation, data?.locations), [data?.events, data?.locations, selectedLocation]);
-  const filteredEventIds = useMemo(() => new Set(filteredEvents.map((event) => event.id)), [filteredEvents]);
-  const filteredRisks = useMemo(() => (data?.risks || []).filter((risk) => filteredEventIds.has(risk.event_id)), [data?.risks, filteredEventIds]);
-  const filteredRiskIds = useMemo(() => new Set(filteredRisks.map((risk) => risk.id)), [filteredRisks]);
-  const filteredPredictions = useMemo(() => (data?.predictions || []).filter((prediction) => filteredRiskIds.has(prediction.risk_id)), [data?.predictions, filteredRiskIds]);
-  const filteredRecommendations = useMemo(() => (data?.recommendations || []).filter((recommendation) => filteredPredictions.some((prediction) => prediction.id === recommendation.prediction_id)), [data?.recommendations, filteredPredictions]);
-  const selectedWeatherLocations = useMemo(
-    () => getWeatherLocationsForWorkspace(data?.locations, selectedLocation),
-    [data?.locations, selectedLocation],
+  useEffect(() => {
+    if (autoWeatherLoaded.current || isLoading || !data?.locations) return;
+    autoWeatherLoaded.current = true;
+    const locations = getWeatherLocationsForScope(data.locations, weatherScope);
+    if (locations.length) weatherMutation.mutate(locations);
+  }, [isLoading, data?.locations, weatherScope, weatherMutation]);
+
+  const selectedDefinition =
+    WORKSPACE_LOCATIONS.find((l) => l.id === selectedLocation) || WORKSPACE_LOCATIONS[0];
+  const filteredEvents = useMemo(
+    () => filterEventsByWorkspace(data?.events, selectedLocation, data?.locations),
+    [data?.events, data?.locations, selectedLocation],
   );
-  const weatherCityStates = useMemo(
+  const filteredEventIds = useMemo(
+    () => new Set(filteredEvents.map((event) => event.id)), [filteredEvents]);
+  const filteredRisks = useMemo(
+    () => (data?.risks || []).filter((risk) => filteredEventIds.has(risk.event_id)),
+    [data?.risks, filteredEventIds],
+  );
+  const selectedWeatherLocations = useMemo(
+    () => getWeatherLocationsForScope(data?.locations, weatherScope),
+    [data?.locations, weatherScope],
+  );
+  const scopedWeatherCityStates = useMemo(
     () => buildWeatherCityStates(data?.locations, data?.events, data?.risks)
-      .filter((state) => selectedWeatherLocations.some(
-        (location) => location.id === state.location.id,
-      )),
+      .filter((s) => selectedWeatherLocations.some((l) => l.id === s.location.id)),
     [data?.locations, data?.events, data?.risks, selectedWeatherLocations],
   );
-  const activeRisks = filteredRisks.filter((risk) => ['active', 'new', 'in progress'].includes(String(risk.status || '').toLowerCase()));
-  const highPriorityRisks = filteredRisks.filter((risk) => ['critical', 'high'].includes(String(risk.severity || '').toLowerCase())).sort((a, b) => Number(b.risk_score || 0) - Number(a.risk_score || 0)).slice(0, 5);
-  const intelligenceItems = useMemo(() => composeEventIntelligence(filteredEvents, filteredRisks, filteredPredictions, filteredRecommendations).sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0)).slice(0, 12), [filteredEvents, filteredPredictions, filteredRecommendations, filteredRisks]);
 
-  const changeLocation = (value) => { setSelectedLocation(value); localStorage.setItem('supplysentry-location', value); };
+  // Risks currently surfaced for the selected workspace. SupplySentry detects a
+  // very large event stream, but only a smaller classified set is actionable.
+  const currentRisks = useMemo(() => {
+    const scoped = (currentRiskData?.items || []).filter((item) =>
+      matchesWorkspaceLocation(item.location, selectedLocation, data?.locations));
+    return scoped.sort((a, b) => (
+      (SEVERITY_RANK[String(a.severity || '').toLowerCase()] ?? 4)
+      - (SEVERITY_RANK[String(b.severity || '').toLowerCase()] ?? 4)
+    ) || Number(b.risk_score || 0) - Number(a.risk_score || 0));
+  }, [currentRiskData, selectedLocation, data?.locations]);
+
+  // Bounded subset keeps the dashboard readable; Risks page has the full list.
+  const highlightedRisks = useMemo(() => currentRisks.slice(0, 8), [currentRisks]);
+  const highCriticalCount = useMemo(
+    () => currentRisks.filter((r) => ['high', 'critical'].includes(String(r.severity || '').toLowerCase())).length,
+    [currentRisks],
+  );
+
+  const companyRelevance = data?.companyRelevance || null;
+  const workspaceEventIds = useMemo(
+    () => new Set(filteredEvents.map((event) => event.id)), [filteredEvents]);
+  const companyRelevantRows = useMemo(
+    () => (companyRelevance?.events || []).filter((row) => {
+      const level = companyRelevanceLevel(row);
+      return (level === 'direct' || level === 'indirect') && workspaceEventIds.has(row.event_id);
+    }),
+    [companyRelevance, workspaceEventIds],
+  );
+
+  const changeLocation = (value) => {
+    setSelectedLocation(value);
+    localStorage.setItem('supplysentry-location', value);
+  };
+
   if (isError) return <WorkspaceMessage title="Dashboard unavailable" message={error.message} />;
   const weatherRefreshSummary = weatherMutation.data || [];
 
-  return <div className="mx-auto max-w-7xl space-y-6 pb-10">
-    <header className="border-b border-border/70 pb-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">SupplySentry workspace</p><h1 className="mt-2 text-3xl font-bold tracking-tight">{selectedDefinition.label}</h1><p className="mt-1 text-sm text-muted-foreground">{selectedDefinition.kind === 'all' ? 'Network-wide intelligence across all stored locations.' : selectedDefinition.kind === 'global' ? 'Locationless intelligence with no reliable geographic match.' : `Operational intelligence for ${selectedDefinition.label}.`}</p></div><div className="flex items-center gap-3"><label className="flex items-center gap-2 text-sm font-medium" htmlFor="workspace-location"><MapPin className="h-4 w-4 text-primary" /><span className="sr-only">Workspace location</span><select id="workspace-location" value={selectedLocation} onChange={(event) => changeLocation(event.target.value)} className="h-10 min-w-44 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">{WORKSPACE_LOCATIONS.map((location) => <option key={location.id} value={location.id}>{location.label}</option>)}</select></label><Button variant="outline" size="icon" title="Refresh workspace" onClick={() => queryClient.invalidateQueries({ queryKey: ['dashboardWorkspace'] })}><RefreshCcw className="h-4 w-4" /></Button></div></div></header>
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><KpiCard title="Active risks" value={isLoading ? <Skeleton className="h-8 w-14" /> : activeRisks.length} icon={ShieldAlert} /><KpiCard title="High / critical" value={isLoading ? <Skeleton className="h-8 w-14" /> : filteredRisks.filter((risk) => ['high', 'critical'].includes(String(risk.severity || '').toLowerCase())).length} icon={AlertTriangle} valueClass="text-destructive" /><KpiCard title="Events" value={isLoading ? <Skeleton className="h-8 w-14" /> : filteredEvents.length} icon={Activity} /><KpiCard title="Predictions" value={isLoading ? <Skeleton className="h-8 w-14" /> : filteredPredictions.length} icon={BrainCircuit} /></section>
-    <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <CardTitle className="flex items-center gap-2"><CloudRain className="h-5 w-5 text-primary" /> Weather risk map</CardTitle>
-              <CardDescription>Weather monitoring is separate from primary intelligence filtering.</CardDescription>
-            </div>
+  return (
+    <div className="ss-page ss-enter space-y-5 pb-10">
+      <header className="border-b border-border/70 pb-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="ss-eyebrow text-primary">SupplySentry workspace</p>
+            <h1 className="mt-1.5 text-2xl font-semibold tracking-tight">{selectedDefinition.label}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {selectedDefinition.kind === 'all'
+                ? 'Network-wide intelligence across all stored locations.'
+                : selectedDefinition.kind === 'global'
+                  ? 'Intelligence not specific to a single monitored region.'
+                  : `Operational intelligence for ${selectedDefinition.label}.`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-sm font-medium" htmlFor="workspace-location">
+              <MapPin className="h-4 w-4 text-muted-foreground" />
+              <span className="sr-only">Workspace location</span>
+              <select
+                id="workspace-location"
+                value={selectedLocation}
+                onChange={(e) => changeLocation(e.target.value)}
+                className="h-9 min-w-40 rounded-lg border border-input bg-background px-3 text-sm shadow-sm"
+              >
+                {WORKSPACE_LOCATIONS.map((l) => (
+                  <option key={l.id} value={l.id}>{l.label}</option>
+                ))}
+              </select>
+            </label>
             <Button
               variant="outline"
-              size="sm"
-              onClick={() => weatherMutation.mutate(selectedWeatherLocations)}
-              disabled={weatherMutation.isPending || selectedWeatherLocations.length === 0}
+              size="icon"
+              title="Refresh workspace"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['dashboardWorkspace'] })}
             >
-              <CloudRain className="mr-2 h-4 w-4" />
-              {weatherMutation.isPending ? 'Refreshing weather...' : 'Refresh weather'}
+              <RefreshCcw className="h-4 w-4" />
             </Button>
           </div>
+        </div>
+      </header>
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <KpiCard title="Active Risks" value={isLoading ? <Skeleton className="h-6 w-12" /> : currentRisks.length} icon={ShieldAlert} />
+        <KpiCard title="High / Critical" value={isLoading ? <Skeleton className="h-6 w-12" /> : highCriticalCount} icon={AlertTriangle} valueClass="text-destructive" />
+        <KpiCard title="Current Risks" value={isLoading ? <Skeleton className="h-6 w-12" /> : currentRisks.length} icon={Activity} />
+      </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldAlert className="h-4 w-4 text-destructive" /> Company-relevant risks
+          </CardTitle>
+          <CardDescription>
+            Highest-priority company-relevant risks in this workspace, ordered by severity and risk score.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? <Skeleton className="h-[420px] w-full" /> : <WeatherRiskMap cityStates={weatherCityStates} />}
+          <CurrentRiskCards
+            risks={highlightedRisks}
+            isLoading={isLoading || !currentRiskData}
+            onOpen={(riskId) => navigate(`/risks/${riskId}`)}
+          />
+        </CardContent>
+      </Card>
+
+      {companyRelevance ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Building2 className="h-4 w-4 text-primary" /> Company relevant intelligence
+            </CardTitle>
+            <CardDescription>
+              {companyRelevance.company_name
+                ? `${companyRelevance.company_name} - ${companyRelevance.industry}`
+                : 'Matches against your configured company dependencies.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2.5">
+            {companyRelevantRows.length ? (
+              companyRelevantRows.slice(0, 6).map((row) => {
+                const risk = filteredRisks.find((r) => r.event_id === row.event_id);
+                return (
+                  <div key={row.event_id} className="rounded-lg border border-border/60 bg-muted/10 p-3">
+                    <p className="text-sm font-medium text-foreground">
+                      {row.title || `Event ${row.event_id}`}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {companyRelevanceLevel(row)} relevance
+                      {row.reason ? ` - ${row.reason}` : ''}
+                    </p>
+                    {risk && (
+                      <Button size="sm" variant="outline" className="mt-2" onClick={() => navigate(`/risks/${risk.id}`)}>
+                        View Risk
+                      </Button>
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              <EmptyState text="No company-relevant risks are currently identified for this workspace. General intelligence remains available in the Events view." />
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CloudRain className="h-4 w-4 text-primary" /> Weather monitoring
+          </CardTitle>
+          <CardDescription>
+            {selectedWeatherLocations.length} monitoring{' '}
+            {selectedWeatherLocations.length === 1 ? 'location' : 'locations'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-[420px] w-full" /> : <WeatherRiskMap cityStates={scopedWeatherCityStates} />}
           {weatherRefreshSummary.length > 0 && (
             <div className="mt-3 text-xs text-muted-foreground">
-              {weatherRefreshSummary.filter((item) => item.status === 'success').length} updated;
-              {' '}{weatherRefreshSummary.filter((item) => item.status === 'error').length} failed.
-              {weatherRefreshSummary.some((item) => item.status === 'error') && (
-                <span> Failed cities: {weatherRefreshSummary.filter((item) => item.status === 'error').map((item) => item.location).join(', ')}.</span>
-              )}
+              {weatherRefreshSummary.filter((i) => i.status === 'success').length} updated;{' '}
+              {weatherRefreshSummary.filter((i) => i.status === 'error').length} failed.
             </div>
           )}
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader><CardTitle>High-priority risks</CardTitle><CardDescription>Signals requiring the fastest review in this intelligence location context.</CardDescription></CardHeader>
-        <CardContent className="space-y-3">{highPriorityRisks.length ? highPriorityRisks.map((risk) => <RiskRow key={risk.id} risk={risk} event={getEventForRisk(risk, filteredEvents)} onOpen={() => navigate(`/risks/${risk.id}`)} />) : <EmptyState text="No high or critical risks in this context." />}</CardContent>
-      </Card>
-    </section>
-    <Card><CardHeader className="flex-row items-center justify-between space-y-0"><div><CardTitle>Unified intelligence feed</CardTitle><CardDescription>Events, risks, and predictions ordered by their most useful available timestamp.</CardDescription></div><Button variant="outline" size="sm" onClick={() => navigate('/feed')}>Open full feed <ExternalLink className="ml-2 h-4 w-4" /></Button></CardHeader><CardContent className="space-y-3">{isLoading ? <Skeleton className="h-48 w-full" /> : intelligenceItems.length ? intelligenceItems.map((item) => <FeedRow key={item.id} item={item} onOpen={() => navigate(item.href)} />) : <EmptyState text="No intelligence is available for this location context." />}</CardContent></Card>
-    <div className="flex items-center gap-2 text-xs text-muted-foreground"><Database className="h-3.5 w-3.5" /> Location values are filtered exactly as stored. Global represents Unknown or null locations.</div>
-  </div>;
+    </div>
+  );
 }
 
-function KpiCard({ title, value, icon: Icon, valueClass = '' }) { return <Card className="p-5"><div className="flex items-start justify-between"><div><p className="text-sm text-muted-foreground">{title}</p><div className={`mt-3 text-3xl font-bold tracking-tight ${valueClass}`}>{value}</div></div><Icon className="h-5 w-5 text-primary" /></div></Card>; }
-function FeedRow({ item, onOpen }) { const displayLocation = formatLocationDisplay(item.event.location); return <button type="button" onClick={onOpen} className="flex w-full items-start gap-3 rounded-xl border border-border/60 bg-muted/10 p-4 text-left transition-colors hover:bg-muted/30"><div className="mt-0.5 rounded-full border border-primary/20 bg-primary/10 p-2"><Activity className="h-4 w-4 text-primary" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{item.title}</span>{item.primaryRisk && <SeverityBadge severity={item.primaryRisk.severity} />}</div><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.description}</p><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"><Badge variant="secondary">{item.category}</Badge><span>{displayLocation.label}</span><span>{item.event.source || 'Source unknown'}</span><span>{relativeTime(item.timestamp)}</span>{item.primaryRisk && <span>{Number(item.primaryRisk.risk_score || 0).toFixed(0)} / 100</span>}{item.primaryPrediction && <span>Prediction {item.primaryPrediction.predicted_severity || 'available'}</span>}</div></div><ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" /></button>; }
-function RiskRow({ risk, event, onOpen }) { const displayLocation = formatLocationDisplay(event?.location); return <button type="button" onClick={onOpen} className="flex w-full items-start justify-between gap-3 rounded-xl border border-border/60 bg-muted/10 p-3 text-left hover:bg-muted/30"><div className="min-w-0"><p className="truncate font-medium">{event?.title || 'Event details unavailable'}</p><p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{event?.description || `${risk.risk_type || 'Risk'} associated with this event.`}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>{risk.risk_type || 'Risk'}</span><span>{displayLocation.label}</span><span>{event?.source || 'Source unknown'}</span></div></div><div className="flex shrink-0 flex-col items-end gap-2"><SeverityBadge severity={risk.severity} /><span className="text-xs font-medium">{Number(risk.risk_score || 0).toFixed(0)} / 100</span></div></button>; }
-function EmptyState({ text }) { return <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">{text}</div>; }
-function WorkspaceMessage({ title, message }) { return <div className="flex min-h-[50vh] flex-col items-center justify-center text-center"><AlertTriangle className="mb-4 h-10 w-10 text-destructive" /><h2 className="text-2xl font-bold">{title}</h2><p className="mt-2 text-muted-foreground">{message}</p></div>; }
+function CurrentRiskCards({ risks, isLoading, onOpen }) {
+  if (isLoading) return <Skeleton className="h-48 w-full" />;
+  if (!risks.length) {
+    return <EmptyState text="No company-relevant risks are currently identified for this workspace. General intelligence remains available in the Events view." />;
+  }
+  return (
+    <div className="grid gap-2.5">
+      {risks.map((risk) => (
+        <div key={risk.risk_id} className="rounded-xl border border-border/60 bg-card p-4 transition-colors duration-150 hover:border-primary/50">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold leading-snug text-foreground">
+                {risk.title || `Risk ${risk.risk_id}`}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {[risk.location, risk.category].filter(Boolean).join(' / ')}
+              </p>
+              {risk.risk_type && (
+                <p className="mt-1 text-xs text-muted-foreground">Type: {risk.risk_type}</p>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <SeverityBadge severity={risk.severity} />
+              <Button size="sm" variant="outline" onClick={() => onOpen(risk.risk_id)}>View Risk</Button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

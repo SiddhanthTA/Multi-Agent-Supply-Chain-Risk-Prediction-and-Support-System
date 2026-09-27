@@ -1,4 +1,4 @@
-import { useReducer } from 'react';
+import { useEffect, useReducer } from 'react';
 import { AlertTriangle, Bot, LoaderCircle, RefreshCw } from 'lucide-react';
 import api from '@/services/api';
 import { Button } from '@/components/ui/Button';
@@ -14,11 +14,19 @@ import {
 
 const SECTION_ORDER = Object.keys(INVESTIGATION_SECTION_LABELS);
 
-export default function RiskInvestigationPanel({ riskId, buttonLabel = 'Investigate Risk' }) {
+export default function RiskInvestigationPanel({ riskId, buttonLabel = 'Investigate Risk', companyContext = null, onInvestigationReady }) {
   const [{ investigation, isLoading, error }, dispatch] = useReducer(
     investigationReducer,
     initialInvestigationState,
   );
+
+  // Reports the completed investigation to the parent so the Agent 2 demo panel
+  // can be enabled. Agent 1 behaviour itself is unchanged.
+  useEffect(() => {
+    if (investigation && onInvestigationReady) {
+      onInvestigationReady(investigation);
+    }
+  }, [investigation, onInvestigationReady]);
 
   if (riskId == null) {
     return (
@@ -69,6 +77,13 @@ export default function RiskInvestigationPanel({ riskId, buttonLabel = 'Investig
             <CardDescription>
               Generated from {investigation.evidence?.length || 0} bounded platform evidence records. Decision support only.
             </CardDescription>
+            {companyContext?.relevance && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {companyContext.relevance.relevance === 'no_identified_relevance'
+                  ? 'No identified company dependency match'
+                  : `${companyContext.relevance.relevance} company relevance · ${(companyContext.relevance.matched_dependencies || []).map((item) => item.value).join(' · ')}`}
+              </p>
+            )}
           </CardHeader>
           <CardContent className="space-y-5">
             {SECTION_ORDER.map((key) => {
@@ -83,14 +98,15 @@ export default function RiskInvestigationPanel({ riskId, buttonLabel = 'Investig
                   ) : (
                     <ul className="space-y-3">
                       {statements.map((statement, index) => (
-                        <li key={`${key}-${index}`} className="rounded-lg border border-border/60 bg-muted/10 p-3">
+                        <li
+                          key={`${key}-${index}`}
+                          data-evidence-refs={(statement.evidence_refs || []).join(',')}
+                          className="rounded-lg border border-border/60 bg-muted/10 p-3"
+                        >
                           <div className="mb-2 flex flex-wrap items-center gap-2">
                             <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
                               {INVESTIGATION_TYPE_LABELS[statement.statement_type] || statement.statement_type}
                             </Badge>
-                            {statement.evidence_refs?.map((ref) => (
-                              <Badge key={ref} variant="secondary" className="text-[10px]">{ref}</Badge>
-                            ))}
                           </div>
                           <p className="text-sm leading-relaxed text-foreground">{statement.text}</p>
                           {statement.evidence_quotes?.map((quote) => (

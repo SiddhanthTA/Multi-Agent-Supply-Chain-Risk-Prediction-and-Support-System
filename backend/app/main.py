@@ -17,6 +17,7 @@ from app.routers import (
     system_log,
     auth,
     location,
+    company_profile,
     investigation,
 )
 
@@ -93,6 +94,7 @@ app.include_router(ai_log.router)
 app.include_router(system_log.router)
 app.include_router(auth.router)
 app.include_router(location.router)
+app.include_router(company_profile.router)
 app.include_router(investigation.router)
 
 # Ensure uploads directory exists and mount it
@@ -107,11 +109,9 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 def startup_event():
     start_scheduler()
     
-    # Create default admin if DB is empty
+    # No default account is created automatically; new users register explicitly.
     from app.database.database import SessionLocal, engine
-    from app.crud.user import get_users, create_user
-    from app.schemas.user import UserCreate
-    
+
     # Safe SQLite migration for new columns
     try:
         with engine.begin() as conn:
@@ -127,16 +127,6 @@ def startup_event():
 
     db = SessionLocal()
     try:
-        users = get_users(db)
-        if len(users) == 0:
-            create_user(db, UserCreate(
-                username="Admin",
-                email="admin@supplysentry.com",
-                password="admin",
-                role="admin"
-            ))
-            print("Default admin user created: admin@supplysentry.com / admin")
-
         cleanup_stale_normal_weather_risks(db)
         print("Checked and normalized stale normal-weather risk records.")
     finally:

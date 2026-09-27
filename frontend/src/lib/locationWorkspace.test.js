@@ -3,10 +3,13 @@ import test from 'node:test';
 
 import {
   buildWeatherCityStates,
+  getWeatherLocationsForScope,
   getWeatherLocationsForWorkspace,
   getWeatherMonitoringLocations,
+  normalizeWeatherScope,
   normalizeWorkspaceLocation,
   refreshWeatherLocations,
+  WEATHER_SCOPES,
   WORKSPACE_LOCATIONS,
 } from './locationWorkspace.js';
 
@@ -59,6 +62,35 @@ test('weather cities exclude primary countries and group by workspace', () => {
   );
   assert.equal(getWeatherLocationsForWorkspace(locationRecords, 'all').length, 8);
   assert.equal(getWeatherLocationsForWorkspace(locationRecords, 'global').length, 8);
+});
+
+test('weather scope selector offers global, India and United States only', () => {
+  assert.deepEqual(
+    WEATHER_SCOPES.map(({ id, label }) => ({ id, label })),
+    [
+      { id: 'global', label: 'Global' },
+      { id: 'India', label: 'India' },
+      { id: 'United States', label: 'United States' },
+    ],
+  );
+  assert.equal(normalizeWeatherScope('global'), 'global');
+  assert.equal(normalizeWeatherScope('India'), 'India');
+  assert.equal(normalizeWeatherScope('United States'), 'United States');
+  assert.equal(normalizeWeatherScope('Singapore'), 'global');
+  assert.equal(normalizeWeatherScope(null), 'global');
+});
+
+test('weather scope selection returns 8 global, 4 India and 4 United States locations', () => {
+  assert.equal(getWeatherLocationsForScope(locationRecords, 'global').length, 8);
+  assert.deepEqual(
+    getWeatherLocationsForScope(locationRecords, 'India').map((location) => location.name),
+    ['Mumbai', 'Delhi', 'Chennai', 'Kolkata'],
+  );
+  assert.deepEqual(
+    getWeatherLocationsForScope(locationRecords, 'United States').map((location) => location.name),
+    ['Los Angeles', 'Houston', 'Chicago', 'New York'],
+  );
+  assert.equal(getWeatherLocationsForScope(locationRecords, 'unknown').length, 8);
 });
 
 test('weather city states join the latest Event to its highest-priority Risk', () => {

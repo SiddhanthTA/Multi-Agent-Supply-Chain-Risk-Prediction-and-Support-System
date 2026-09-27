@@ -31,6 +31,8 @@ class BaseLLMProvider:
         user_prompt: str,
         output_schema: dict,
         max_tokens: int,
+        assistant_prefix: str = "",
+        classification_choices: tuple[str, ...] = (),
     ) -> dict:
         raise NotImplementedError
 
@@ -40,7 +42,6 @@ class LocalTransformersProvider(BaseLLMProvider):
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._active = False
 
     @property
     def name(self) -> str:
@@ -53,6 +54,8 @@ class LocalTransformersProvider(BaseLLMProvider):
         user_prompt: str,
         output_schema: dict,
         max_tokens: int,
+        assistant_prefix: str = "",
+        classification_choices: tuple[str, ...] = (),
     ) -> dict:
         if not self._lock.acquire(blocking=False):
             raise AgentBusyError("The investigation agent is already busy.")
@@ -61,6 +64,8 @@ class LocalTransformersProvider(BaseLLMProvider):
                 "system_prompt": system_prompt,
                 "user_prompt": user_prompt,
                 "max_tokens": max_tokens,
+                "assistant_prefix": assistant_prefix,
+                "classification_choices": list(classification_choices),
             })
             try:
                 result = subprocess.run(

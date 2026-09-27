@@ -5,6 +5,9 @@ export const WORKSPACE_LOCATIONS = [
   { id: 'United States', label: 'United States', kind: 'specific' },
 ];
 
+/** Regions with their own workspace view; everything else reads as Global. */
+const MONITORED_REGIONS = new Set(['india', 'united states']);
+
 export function normalizeWorkspaceLocation(value) {
   const candidate = String(value || 'all');
   return WORKSPACE_LOCATIONS.some((location) => location.id === candidate)
@@ -26,9 +29,17 @@ export function matchesWorkspaceLocation(value, selectedLocation, locationRecord
   const normalizedValue = value === null || value === undefined ? '' : String(value).trim();
 
   if (selected.kind === 'all') return true;
-  if (selected.kind === 'global') return !normalizedValue || normalizedValue.toLowerCase() === 'unknown';
+  if (selected.kind === 'specific') {
+    return normalizedValue === getStoredLocationValue(locationRecords, selected.label);
+  }
 
-  return normalizedValue === getStoredLocationValue(locationRecords, selected.label);
+  // Global: intelligence that is not specific to either monitored region, i.e.
+  // locationless events and events attributed to any other country.
+  return (
+    !normalizedValue
+    || normalizedValue.toLowerCase() === 'unknown'
+    || !MONITORED_REGIONS.has(normalizedValue.toLowerCase())
+  );
 }
 
 export function filterEventsByWorkspace(events, selectedLocation, locationRecords) {
@@ -36,6 +47,22 @@ export function filterEventsByWorkspace(events, selectedLocation, locationRecord
 }
 
 export const WEATHER_MONITORING_COUNTRIES = ['India', 'United States'];
+
+export const WEATHER_SCOPES = Object.freeze([
+  { id: 'global', label: 'Global', countries: WEATHER_MONITORING_COUNTRIES },
+  { id: 'India', label: 'India', countries: ['India'] },
+  { id: 'United States', label: 'United States', countries: ['United States'] },
+]);
+
+export function normalizeWeatherScope(value) {
+  const candidate = String(value || 'global');
+  return WEATHER_SCOPES.some((scope) => scope.id === candidate) ? candidate : 'global';
+}
+
+export function getWeatherScopeCountries(scope) {
+  const selected = WEATHER_SCOPES.find((item) => item.id === normalizeWeatherScope(scope));
+  return selected ? selected.countries : WEATHER_MONITORING_COUNTRIES;
+}
 
 function canonicalWeatherLocation(location) {
   const name = String(location?.name || '').trim();
@@ -51,12 +78,18 @@ export function getWeatherMonitoringLocations(locationRecords = []) {
   });
 }
 
-export function getWeatherLocationsForWorkspace(locationRecords = [], selectedLocation = 'all') {
-  const weatherLocations = getWeatherMonitoringLocations(locationRecords);
-  if (selectedLocation === 'all' || selectedLocation === 'global') return weatherLocations;
-  return weatherLocations.filter(
-    (location) => String(location?.country || '').trim() === selectedLocation,
+export function getWeatherLocationsForScope(locationRecords = [], scope = 'global') {
+  const countries = getWeatherScopeCountries(scope);
+  return getWeatherMonitoringLocations(locationRecords).filter(
+    (location) => countries.includes(String(location?.country || '').trim()),
   );
+}
+
+export function getWeatherLocationsForWorkspace(locationRecords = [], selectedLocation = 'all') {
+  if (selectedLocation === 'India' || selectedLocation === 'United States') {
+    return getWeatherLocationsForScope(locationRecords, selectedLocation);
+  }
+  return getWeatherLocationsForScope(locationRecords, 'global');
 }
 
 function eventMatchesWeatherLocation(event, location) {

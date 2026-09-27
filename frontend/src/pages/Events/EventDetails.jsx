@@ -12,6 +12,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { formatLocationDisplay } from '@/lib/locationDisplay';
 import RiskInvestigationPanel from '@/components/RiskInvestigationPanel';
+import { CompanyRelevanceContext } from '@/components/CompanyRelevance';
 
 // Fix leaflet default icon issue in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -22,9 +23,10 @@ L.Icon.Default.mergeOptions({
 });
 
 const fetchEventDetails = async (id) => {
-  const [eventRes, risksRes] = await Promise.all([
+  const [eventRes, risksRes, relevanceRes] = await Promise.all([
     api.get(`/events/${id}`),
-    api.get('/risks/')
+    api.get('/risks/'),
+    api.get(`/company-profile/relevance/events/${id}`).catch(() => null),
   ]);
   
   const event = eventRes.data;
@@ -48,7 +50,8 @@ const fetchEventDetails = async (id) => {
     displayLocation: displayLocation.label,
     displayLocationSecondary: displayLocation.secondary,
     relatedRisks,
-    highestSeverityRisk
+    highestSeverityRisk,
+    companyRelevance: relevanceRes?.data || null,
   };
 };
 
@@ -192,6 +195,10 @@ export default function EventDetails() {
               )}
             </CardContent>
           </Card>
+
+          {!isLoading && event?.companyRelevance && (
+            <CompanyRelevanceContext row={event.companyRelevance} />
+          )}
 
           {!isLoading && (
             <RiskInvestigationPanel

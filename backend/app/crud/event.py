@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -94,8 +96,17 @@ def get_event(db: Session, event_id: int):
 # --------------------------------------------------
 # GET ALL EVENTS
 # --------------------------------------------------
-def get_events(db: Session):
-    return db.query(Event).all()
+def get_events(db: Session, days: int | None = None):
+    """All events, optionally limited to a recent rolling window.
+
+    ``days`` is a presentation/query filter only: nothing is deleted and the
+    full history remains browsable by omitting the parameter.
+    """
+    query = db.query(Event)
+    if days is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        query = query.filter(Event.created_at >= cutoff)
+    return query.all()
 
 
 # --------------------------------------------------

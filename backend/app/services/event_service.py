@@ -304,6 +304,13 @@ def store_weather_event(db: Session, location: str = None):
 # SCHEDULER FUNCTION
 # --------------------------------------------------
 def collect_news_events():
+    # Second layer of the same switch used by the scheduler. This also covers
+    # any direct/manual invocation, so no NewsAPI or Currents request can be
+    # issued and no new Event/Risk can be created while ingestion is paused.
+    if not settings.INGESTION_ENABLED:
+        logger.info("News collection skipped: INGESTION_ENABLED is false.")
+        return
+
     collection_id = new_collection_id()
     started = start_timer()
     logger.info("Scheduler triggered.")

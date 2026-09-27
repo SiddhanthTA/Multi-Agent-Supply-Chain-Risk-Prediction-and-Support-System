@@ -4,6 +4,19 @@
 
 @layer base {
   :root {
+    /* Typography: modern UI sans stack, no download required. */
+    --font-sans: "Inter", "Geist", "Manrope", system-ui, -apple-system,
+      BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+      sans-serif;
+    --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular,
+      Menlo, Consolas, monospace;
+
+    /* Motion */
+    --motion-fast: 150ms;
+    --motion-base: 200ms;
+    --motion-slow: 250ms;
+    --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
@@ -23,7 +36,15 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;
-    --radius: 0.5rem;
+
+    /* Surfaces */
+    --surface: 222 47% 7%;
+    --surface-elevated: 222 44% 9%;
+    --surface-hover: 222 40% 12%;
+    --border-subtle: 217 30% 19%;
+
+    /* Radius */
+    --radius: 0.625rem;
   }
 
   .light {
@@ -46,6 +67,10 @@
     --border: 212 36% 85%;
     --input: 212 36% 85%;
     --ring: 221.2 83.2% 53.3%;
+    --surface: 0 0% 100%;
+    --surface-elevated: 0 0% 100%;
+    --surface-hover: 215 32% 97%;
+    --border-subtle: 212 30% 89%;
   }
 }
 
@@ -55,7 +80,19 @@
   }
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/20;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: var(--font-sans);
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.011em;
+  }
+
+  h1, h2, h3, h4 {
+    letter-spacing: -0.02em;
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
   }
   
   /* Fix native select option visibility in dark mode */
@@ -138,7 +175,130 @@
   .light .rounded-2xl:has(.rounded-full > .text-blue-500) { border-top: 3px solid hsl(221 83% 53%); }
 }
 
+@layer components {
+  /* ---- Page shell ---------------------------------------------------- */
+  .ss-page {
+    @apply mx-auto w-full max-w-7xl;
+  }
+
+  /* ---- Surface card: restrained border, minimal depth ---------------- */
+  .ss-surface {
+    background-color: hsl(var(--surface));
+    border: 1px solid hsl(var(--border-subtle) / 0.9);
+    box-shadow: 0 1px 2px hsl(220 40% 2% / 0.4);
+  }
+  .light .ss-surface {
+    box-shadow: 0 1px 2px hsl(215 30% 40% / 0.06);
+  }
+
+  /* ---- Compact dashboard metric ------------------------------------- */
+  .ss-metric {
+    @apply relative rounded-xl border p-4;
+    background-color: hsl(var(--surface));
+    border-color: hsl(var(--border-subtle) / 0.9);
+    transition:
+      transform var(--motion-fast) var(--ease-out-quart),
+      border-color var(--motion-fast) var(--ease-out-quart),
+      background-color var(--motion-fast) var(--ease-out-quart),
+      box-shadow var(--motion-fast) var(--ease-out-quart);
+  }
+  .ss-metric:hover {
+    transform: translateY(-1px);
+    border-color: hsl(var(--primary) / 0.35);
+    background-color: hsl(var(--surface-elevated));
+    box-shadow: 0 6px 16px -8px hsl(220 50% 2% / 0.6);
+  }
+  .light .ss-metric:hover {
+    box-shadow: 0 8px 20px -12px hsl(215 30% 40% / 0.35);
+  }
+  .ss-metric:active {
+    transform: translateY(0);
+  }
+  .ss-metric-label {
+    @apply text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground;
+  }
+  .ss-metric-value {
+    @apply mt-1.5 text-2xl font-semibold leading-none tracking-tight;
+  }
+
+  /* ---- Interactive list row ----------------------------------------- */
+  .ss-row {
+    @apply w-full rounded-xl border p-4 text-left;
+    background-color: hsl(var(--surface));
+    border-color: hsl(var(--border-subtle) / 0.9);
+    transition:
+      transform var(--motion-fast) var(--ease-out-quart),
+      border-color var(--motion-fast) var(--ease-out-quart),
+      background-color var(--motion-fast) var(--ease-out-quart);
+  }
+  .ss-row:hover {
+    transform: translateY(-1px);
+    border-color: hsl(var(--primary) / 0.3);
+    background-color: hsl(var(--surface-elevated));
+  }
+  .ss-row:active {
+    transform: translateY(0);
+  }
+
+  /* ---- Section heading --------------------------------------------- */
+  .ss-section-title {
+    @apply text-sm font-semibold tracking-tight text-foreground;
+  }
+  .ss-eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground;
+  }
+
+  /* ---- Chart tooltip (Recharts contentClassName) -------------------- */
+  .ss-chart-tooltip {
+    background-color: hsl(var(--surface-elevated)) !important;
+    border: 1px solid hsl(var(--border-subtle)) !important;
+    border-radius: 0.5rem !important;
+    box-shadow: 0 12px 28px -16px hsl(220 50% 2% / 0.9) !important;
+    font-size: 12px !important;
+    padding: 8px 10px !important;
+  }
+  .ss-chart-tooltip .label {
+    color: hsl(var(--muted-foreground));
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+}
+
 @layer utilities {
+  /* Page-level fade + subtle rise, applied on route content */
+  .ss-enter {
+    animation: ss-enter var(--motion-slow) var(--ease-out-quart) both;
+  }
+  @keyframes ss-enter {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Staggered card entrance: pass an index via --ss-i */
+  .ss-stagger {
+    animation: ss-stagger 260ms var(--ease-out-quart) both;
+    animation-delay: calc(var(--ss-i, 0) * 30ms);
+  }
+  @keyframes ss-stagger {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .ss-animate-in {
+    animation: ss-enter var(--motion-slow) var(--ease-out-quart) both;
+  }
   .animate-in {
     animation: animate-in 0.5s ease-out forwards;
   }

@@ -26,6 +26,13 @@ class User(Base):
         back_populates="user"
     )
 
+    company_profile = relationship(
+        "CompanyProfile",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
     monitored_locations = relationship(
         "MonitoredLocation",
         back_populates="user",

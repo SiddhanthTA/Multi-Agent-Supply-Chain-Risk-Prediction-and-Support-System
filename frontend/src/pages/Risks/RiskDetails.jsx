@@ -1,26 +1,50 @@
 import { useQuery } from '@tanstack/react-query';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import api from '@/services/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { ArrowLeft, AlertTriangle, Calendar, MapPin, Lightbulb, Shield } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Calendar,
+  CheckCircle2,
+  ClipboardList,
+  Link2,
+  MapPin,
+  Network,
+  Shield,
+  Sparkles,
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { formatLocationDisplay } from '@/lib/locationDisplay';
-import RiskInvestigationPanel from '@/components/RiskInvestigationPanel';
+import { CompanyRelevanceContext } from '@/components/CompanyRelevance';
+import ResolveRiskAction from '@/components/risk/ResolveRiskAction';
+import { RESOLVE_RISK_TEXT } from '@/lib/riskInvestigation';
+import { assertRiskId, fetchRiskReportStatus, fetchRiskResolution, useRiskIdParam } from '@/lib/riskReports';
 
 const fetchRiskDetails = async (id) => {
-  const riskRes = await api.get(`/risks/${id}`);
+  const riskRes = await api.get(`/risks/${assertRiskId(id)}`);
   const risk = riskRes.data;
 
   let event = null;
+  let companyRelevance = null;
   if (risk.event_id) {
     try {
       const eventRes = await api.get(`/events/${risk.event_id}`);
       event = eventRes.data;
     } catch (err) {
       console.warn('Could not fetch associated event', err);
+    }
+  }
+
+  if (risk.event_id) {
+    try {
+      const relevanceRes = await api.get(`/company-profile/relevance/events/${risk.event_id}`);
+      companyRelevance = relevanceRes.data;
+    } catch (err) {
+      console.warn('Could not fetch company relevance', err);
     }
   }
 
@@ -32,28 +56,56 @@ const fetchRiskDetails = async (id) => {
     console.warn('Could not fetch associated predictions', err);
   }
 
-  let recommendation = null;
-  if (prediction) {
-    try {
-      const recRes = await api.get('/recommendations/');
-      recommendation = recRes.data.find((item) => Number(item.prediction_id) === Number(prediction.id));
-    } catch (err) {
-      console.warn('Could not fetch associated recommendation', err);
-    }
-  }
-
   const eventLocation = formatLocationDisplay(event?.location);
-  return { ...risk, event: event ? { ...event, displayLocation: eventLocation.label, displayLocationSecondary: eventLocation.secondary } : null, prediction, recommendation };
+  return { ...risk, event: event ? { ...event, displayLocation: eventLocation.label, displayLocationSecondary: eventLocation.secondary } : null, prediction, companyRelevance };
 };
 
 export default function RiskDetails() {
-  const { id } = useParams();
+  // The URL is the source of truth for the current risk.
+  const riskId = useRiskIdParam();
   const navigate = useNavigate();
+  const enabled = riskId != null;
 
   const { data: risk, isLoading, isError, error } = useQuery({
-    queryKey: ['risk', id],
-    queryFn: () => fetchRiskDetails(id),
+    queryKey: ['risk', riskId],
+    queryFn: () => fetchRiskDetails(riskId),
+    enabled,
   });
+
+  // Whether the investigation / response plan already exist is decided by the
+  // backend, not by local component state, so the action labels are always
+  // correct and nothing is regenerated on a revisit.
+  const reportStatus = useQuery({
+    queryKey: ['riskReportStatus', riskId],
+    queryFn: () => fetchRiskReportStatus(riskId),
+    staleTime: 60 * 1000,
+    enabled,
+  });
+  const hasInvestigation = Boolean(reportStatus.data?.investigation_exists);
+  const hasResponsePlan = Boolean(reportStatus.data?.response_plan_exists);
+
+  // Resolution readiness is decided by the backend for the signed-in user.
+  const resolution = useQuery({
+    queryKey: ['riskResolution', riskId],
+    queryFn: () => fetchRiskResolution(riskId),
+    staleTime: 30 * 1000,
+    enabled,
+  });
+
+  if (!enabled) {
+    return (
+      <div className="ss-page ss-enter mx-auto max-w-5xl pb-10">
+        <div className="p-8 text-center">
+          <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-destructive" />
+          <h2 className="text-2xl font-bold text-destructive">Risk not specified</h2>
+          <p className="mt-2 text-muted-foreground">This link does not contain a valid risk id.</p>
+          <Button variant="outline" className="mt-4" onClick={() => navigate('/risks')}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Risks
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isError) {
     return (
@@ -72,15 +124,26 @@ export default function RiskDetails() {
   const confidence = Number(risk?.probability ?? risk?.prediction?.confidence_score ?? 0) * 100;
   const isActive = String(risk?.status || '').toLowerCase() === 'active';
 
+  const isRiskResolved = String(risk?.status || '').toLowerCase() === 'resolved';
+
   return (
-    <div className="max-w-5xl mx-auto pb-10 space-y-6">
+    <div className="ss-page ss-enter mx-auto max-w-5xl pb-10 space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="outline" size="icon" onClick={() => navigate('/')}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Risk Detail</h2>
-          <p className="text-muted-foreground">Detailed assessment for this supply-chain risk signal.</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight">Risk Detail</h2>
+            <p className="text-muted-foreground">Detailed assessment for this supply-chain risk.</p>
+          </div>
+          {/* A resolved risk keeps every piece of its historical intelligence. */}
+          {isRiskResolved && (
+            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+              <CheckCircle2 className="mr-1 h-3 w-3" />
+              {RESOLVE_RISK_TEXT.resolvedBadge}
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -137,42 +200,10 @@ export default function RiskDetails() {
                   <div className="mt-2 text-sm text-muted-foreground">{risk?.event?.source || 'Source unavailable'}</div>
                 </div>
               </div>
-
-              <div>
-                <h3 className="mb-2 text-sm font-semibold uppercase tracking-[0.15em] text-muted-foreground">Assessment</h3>
-                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 text-sm leading-relaxed text-muted-foreground">
-                  {isActive
-                    ? `This signal is currently active and should be reviewed as a ${risk?.severity || 'unknown'} severity ${risk?.risk_name || 'risk'} event.`
-                    : 'Normal conditions are being tracked as context only. No active disruption is currently flagged for this weather observation.'}
-                </div>
-              </div>
             </CardContent>
           </Card>
 
           <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg"><Lightbulb className="h-5 w-5 text-purple-500" /> Current Recommendation</CardTitle>
-                <CardDescription>Rule-based operating guidance currently attached to this event.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {risk?.recommendation ? (
-                  <div className="space-y-4">
-                    <div className="font-semibold text-base">{risk.recommendation.recommendation_title}</div>
-                    <p className="text-sm leading-relaxed text-muted-foreground">{risk.recommendation.recommendation_text}</p>
-                    <div className="flex items-center justify-between border-t border-border/60 pt-3 text-xs text-muted-foreground">
-                      <span>Priority: {risk.recommendation.priority}</span>
-                      <span>{risk.recommendation.status}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
-                    No recommendation is attached to this record yet.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg"><Shield className="h-5 w-5 text-primary" /> Source Event</CardTitle>
@@ -190,16 +221,96 @@ export default function RiskDetails() {
                   <span>Risk Type</span>
                   <span className="font-medium text-foreground">{risk?.risk_type || risk?.risk_name || 'Unknown'}</span>
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span>Prediction Model</span>
-                  <span className="font-medium text-foreground">{risk?.prediction?.prediction_model || 'Rule-based'}</span>
-                </div>
               </CardContent>
             </Card>
-            <RiskInvestigationPanel riskId={risk?.id} />
+            {risk?.companyRelevance && (
+              <CompanyRelevanceContext row={risk.companyRelevance} />
+            )}
+            <RiskActions
+              riskId={riskId}
+              hasInvestigation={hasInvestigation}
+              hasResponsePlan={hasResponsePlan}
+              resolution={resolution}
+            />
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function RiskActions({ riskId, hasInvestigation, hasResponsePlan, resolution }) {
+  const navigate = useNavigate();
+  if (riskId == null) return null;
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Network className="h-4 w-4 text-primary" /> Risk Intelligence
+          </CardTitle>
+          <CardDescription>
+            Open the analysis for this risk. Nothing is recomputed when you return to it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button
+            variant={hasInvestigation ? 'outline' : 'default'}
+            onClick={() => navigate(`/risks/${riskId}/investigation`)}
+          >
+            <Sparkles className="mr-2 h-4 w-4" />
+            {hasInvestigation ? 'View Investigation Report' : 'Investigate Risk'}
+          </Button>
+          <Button variant="outline" onClick={() => navigate(`/risks/${riskId}/correlations`)}>
+            <Link2 className="mr-2 h-4 w-4" />
+            View Correlations
+          </Button>
+          <Button variant="outline" onClick={() => navigate(`/risks/${riskId}/impact`)}>
+            <Network className="mr-2 h-4 w-4" />
+            View Supply Chain Impact
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ClipboardList className="h-4 w-4 text-primary" /> Response
+          </CardTitle>
+          <CardDescription>
+            {hasResponsePlan
+              ? 'A response plan has already been prepared for this risk.'
+              : hasInvestigation
+                ? 'Prepare decision-support options from the stored investigation.'
+                : 'Investigate the risk first to prepare a response plan.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {hasResponsePlan ? (
+            <Button onClick={() => navigate(`/risks/${riskId}/response-plan`)}>
+              <ClipboardList className="mr-2 h-4 w-4" />
+              View Response Plan
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              disabled={!hasInvestigation}
+              onClick={() => navigate(`/risks/${riskId}/response-plan`)}
+            >
+              <ClipboardList className="mr-2 h-4 w-4" />
+              Generate Response Plan
+            </Button>
+          )}
+          {/* Final lifecycle step: only offered once both reports exist. */}
+          <div className="mt-3 border-t border-border/60 pt-3">
+            <ResolveRiskAction
+              riskId={riskId}
+              status={resolution?.status}
+              resolvable={resolution?.resolvable}
+            />
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

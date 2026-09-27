@@ -17,9 +17,10 @@ import {
 } from '@/components/ui/Table';
 import { Search, X, ChevronLeft, ChevronRight, ShieldAlert, Calendar, AlertTriangle, RefreshCw, AlertCircle, BarChart3 } from 'lucide-react';
 import { format } from 'date-fns';
+import { recentParams } from '@/lib/riskReports';
 
 const fetchRisks = async () => {
-  const response = await api.get('/risks/');
+  const response = await api.get('/risks/', { params: recentParams() });
   return response.data;
 };
 

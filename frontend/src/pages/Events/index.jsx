@@ -18,14 +18,21 @@ import {
 import { Search, X, ChevronLeft, ChevronRight, MapPin, Calendar, Activity, AlertTriangle, AlertCircle, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatLocationDisplay } from '@/lib/locationDisplay';
+import { recentParams } from '@/lib/riskReports';
+import { CompanyRelevanceBadge, CompanyRelevanceMatches } from '@/components/CompanyRelevance';
+import { companyRelevanceOptions, isCompanyRelevant } from '@/lib/riskInvestigation';
 
 const fetchEventsData = async () => {
-  const [eventsRes, risksRes] = await Promise.all([
-    api.get('/events/'),
-    api.get('/risks/')
+  const [eventsRes, risksRes, relevanceRes] = await Promise.all([
+    api.get('/events/', { params: recentParams() }),
+    api.get('/risks/', { params: recentParams() }),
+    api.get('/company-profile/relevance').catch(() => null),
   ]);
   
   const risks = risksRes.data;
+  const relevanceByEvent = new Map(
+    (relevanceRes?.data?.events || []).map((row) => [row.event_id, row]),
+  );
   
   return eventsRes.data.map(event => {
     const associatedRisk = risks.find(r => r.event_id === event.id);
@@ -35,6 +42,7 @@ const fetchEventsData = async () => {
       displaySeverity: associatedRisk?.severity || 'Unknown',
       displayLocation: displayLocation.label,
       displayLocationSecondary: displayLocation.secondary,
+      companyRelevance: relevanceByEvent.get(event.id) || null,
     };
   });
 };
@@ -51,6 +59,7 @@ export default function Events() {
   const [typeFilter, setTypeFilter] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [relevanceFilter, setRelevanceFilter] = useState('');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -89,10 +98,11 @@ export default function Events() {
       const matchesType = typeFilter === '' || event.event_type === typeFilter;
       const matchesSeverity = severityFilter === '' || event.displaySeverity === severityFilter;
       const matchesStatus = statusFilter === '' || event.status === statusFilter;
+      const matchesRelevance = relevanceFilter === '' || isCompanyRelevant(event.companyRelevance, relevanceFilter);
 
-      return matchesSearch && matchesType && matchesSeverity && matchesStatus;
+      return matchesSearch && matchesType && matchesSeverity && matchesStatus && matchesRelevance;
     }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  }, [events, search, typeFilter, severityFilter, statusFilter]);
+  }, [events, search, typeFilter, severityFilter, statusFilter, relevanceFilter]);
 
   // Pagination logic
   const totalPages = Math.max(1, Math.ceil(filteredEvents.length / itemsPerPage));
@@ -106,6 +116,7 @@ export default function Events() {
     setTypeFilter('');
     setSeverityFilter('');
     setStatusFilter('');
+    setRelevanceFilter('');
     setCurrentPage(1);
   };
 
@@ -224,6 +235,17 @@ export default function Events() {
               </select>
             </div>
 
+            <div className="md:col-span-2">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">Company Relevance</label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background/50 px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={relevanceFilter}
+                onChange={(e) => { setRelevanceFilter(e.target.value); setCurrentPage(1); }}
+              >
+                {companyRelevanceOptions().map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+
             <div className="md:col-span-3">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">Status</label>
               <select 
@@ -241,7 +263,7 @@ export default function Events() {
                 variant="ghost" 
                 className="h-10 px-3 w-full border border-transparent hover:bg-muted/50 text-muted-foreground disabled:opacity-50" 
                 onClick={handleClearFilters}
-                disabled={!(search || typeFilter || severityFilter || statusFilter)}
+                disabled={!(search || typeFilter || severityFilter || statusFilter || relevanceFilter)}
               >
                 <X className="h-4 w-4 mr-1.5" /> Clear
               </Button>
@@ -297,14 +319,20 @@ export default function Events() {
                         <div className="font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1" title={event.title}>
                           {event.title}
                         </div>
-                        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                        <div className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-2">
                           <Badge variant="secondary" className="px-1.5 py-0 text-[10px] uppercase font-semibold tracking-wider">
                             {event.event_type}
                           </Badge>
+                          <CompanyRelevanceBadge row={event.companyRelevance} />
                           <span className="truncate max-w-[200px] sm:max-w-[300px]" title={event.description}>
                             {event.description || 'No description available'}
                           </span>
                         </div>
+                        {event.companyRelevance && (
+                          <div className="mt-1">
+                            <CompanyRelevanceMatches row={event.companyRelevance} />
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5 text-muted-foreground text-sm">

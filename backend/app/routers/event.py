@@ -42,9 +42,10 @@ def create_new_event(
 
 @router.get("/", response_model=list[EventResponse])
 def read_events(
+    days: int | None = None,
     db: Session = Depends(get_db)
 ):
-    return get_events(db)
+    return get_events(db, days=days)
 
 
 @router.get("/{event_id}", response_model=EventResponse)

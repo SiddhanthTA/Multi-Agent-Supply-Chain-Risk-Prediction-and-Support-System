@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Activity } from 'lucide-react';
 
 export default function Register() {
-  const { register } = useAuth();
+  const { register, login } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -22,8 +22,8 @@ export default function Register() {
 
     try {
       await register(username, email, password);
-      // Automatically navigate to login after successful registration
-      navigate('/login');
+      await login(email, password);
+      navigate('/company-setup');
     } catch (err) {
       setError(err.response?.data?.detail || 'Registration failed. Please try again.');
     } finally {
@@ -41,7 +41,7 @@ export default function Register() {
             </div>
           </div>
           <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
-          <CardDescription>Join SupplySentry AI platform</CardDescription>
+          <CardDescription>Join the SupplySentry platform</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleRegister} className="space-y-4">

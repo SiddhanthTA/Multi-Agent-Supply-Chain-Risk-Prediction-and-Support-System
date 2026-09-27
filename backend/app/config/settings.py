@@ -95,6 +95,16 @@ class Settings(BaseSettings):
     NEWS_COLLECTION_INTERVAL_MINUTES: int | None = None
     SCHEDULER_INTERVAL_SECONDS: int | None = None
 
+    # -----------------------------------------
+    # Background ingestion
+    #
+    # Master switch for automatic news gathering. Set INGESTION_ENABLED=false
+    # to freeze live collection (for a demo or review) without touching stored
+    # data or any other feature. Set it back to true to resume the existing
+    # live pipeline unchanged. Weather collection is independent and keeps
+    # running, because it is not coupled to news ingestion.
+    INGESTION_ENABLED: bool = True
+
     @property
     def news_collection_interval_minutes(self) -> int:
         if self.NEWS_COLLECTION_INTERVAL_MINUTES is not None:

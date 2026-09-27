@@ -39,6 +39,8 @@ class InvestigationEvidence(BaseModel):
         "related_event",
         "location_context",
         "correlation",
+        "company_context",
+        "company_relevance",
     ]
     label: str
     data: dict
@@ -68,3 +70,48 @@ class InvestigationResponse(BaseModel):
 
 class InvestigationGeneration(BaseModel):
     sections: InvestigationSections
+
+
+class RiskReportStatus(BaseModel):
+    """Which AI reports already exist for a risk, for the current user."""
+
+    risk_id: int
+    investigation_exists: bool = False
+    response_plan_exists: bool = False
+
+
+class ResponsePlanOption(BaseModel):
+    name: str
+    what_to_check: list[str] = Field(default_factory=list)
+    why: str
+    information_required: list[str] = Field(default_factory=list)
+
+
+class ResponsePlanPlatformRecommendation(BaseModel):
+    title: str
+    text: str
+    priority: str | None = None
+    status: str | None = None
+
+
+class ResponsePlanResponse(BaseModel):
+    risk_id: int
+    event_id: int
+    scenario: str
+    generated_by: str = "deterministic-response-plan"
+    is_demo_template: bool = True
+    company_context_available: bool
+    company_name: str | None = None
+    company_industry: str | None = None
+    company_relevance: str | None = None
+    matched_dependencies: list[str] = Field(default_factory=list)
+    risk_summary: str
+    response_objective: str
+    immediate_checks: list[str] = Field(default_factory=list)
+    response_options: list[ResponsePlanOption] = Field(default_factory=list)
+    information_required: list[str] = Field(default_factory=list)
+    escalation_conditions: list[str] = Field(default_factory=list)
+    responsible_areas: list[str] = Field(default_factory=list)
+    platform_recommendation: ResponsePlanPlatformRecommendation | None = None
+    notes: list[str] = Field(default_factory=list)
+    decision_support_only: bool = True

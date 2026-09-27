@@ -10,6 +10,19 @@ scheduler = BackgroundScheduler()
 
 
 def start_scheduler():
+    # Live news gathering can be paused with INGESTION_ENABLED=false. The
+    # scheduler is simply not started, so no NewsAPI/Currents call is made and
+    # no new Event/Risk row can be produced. Stored data is untouched and the
+    # application starts normally. Setting the flag back to true restores the
+    # existing behaviour exactly, with no code change.
+    if not settings.INGESTION_ENABLED:
+        logger.info(
+            "Scheduler not started: INGESTION_ENABLED is false. "
+            "Live news collection is paused; stored intelligence is unaffected. "
+            "Set INGESTION_ENABLED=true to resume."
+        )
+        return
+
     if not scheduler.running:
         scheduler.add_job(
             collect_news_events,

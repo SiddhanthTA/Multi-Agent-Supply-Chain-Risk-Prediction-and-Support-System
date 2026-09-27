@@ -361,6 +361,48 @@ def get_recommendation(
 
 
 
+def build_company_context(
+    db: Session,
+    event: dict,
+    risk: dict | None,
+    *,
+    user_id: int,
+) -> dict | None:
+    """Bounded company context for the authenticated user's investigation.
+
+    Uses the existing Company Profile persistence and the existing company
+    relevance service as the single source of truth. Returns None when the
+    authenticated user has no company profile, so investigations continue to
+    work without company context.
+    """
+    from app.crud.company_profile import _dependency_values, get_company_profile
+    from app.services.company_relevance import evaluate_event_relevance
+
+    profile = get_company_profile(db, user_id)
+    if profile is None:
+        return None
+
+    dependencies = _dependency_values(profile)
+    relevance = evaluate_event_relevance(
+        {
+            "title": event.get("title"),
+            "description": event.get("description"),
+            "category": event.get("category"),
+            "event_type": event.get("event_type"),
+            "location": event.get("location"),
+            "source": event.get("source"),
+        },
+        dependencies,
+        risk,
+    )
+    return {
+        "company_name": profile.company_name,
+        "industry": profile.industry,
+        "dependencies": dependencies,
+        "relevance": relevance,
+    }
+
+
 def build_evidence_bundle(
     db: Session,
     risk_id: int,
@@ -441,6 +483,40 @@ def build_evidence_bundle(
         )
     )
 
+    company_context = build_company_context(
+        db,
+        event,
+        risk,
+        user_id=actor.user_id,
+    )
+    if company_context is not None:
+        evidence.append(
+            InvestigationEvidence(
+                ref=f"E{len(evidence) + 1}",
+                evidence_type="company_context",
+                label=(
+                    f"Company context: {company_context['company_name']} "
+                    f"({company_context['industry']})"
+                ),
+                data={
+                    "company_name": company_context["company_name"],
+                    "industry": company_context["industry"],
+                    "dependencies": company_context["dependencies"],
+                },
+            )
+        )
+        evidence.append(
+            InvestigationEvidence(
+                ref=f"E{len(evidence) + 1}",
+                evidence_type="company_relevance",
+                label=(
+                    "Company relevance: "
+                    f"{company_context['relevance']['relevance']}"
+                ),
+                data=company_context["relevance"],
+            )
+        )
+
     return {
         "target": {"risk_id": risk_id, "event_id": event["id"]},
         "event": event,
@@ -450,5 +526,6 @@ def build_evidence_bundle(
         "related_events": related_events,
         "location_context": location_context,
         "correlation": correlation,
+        "company_context": company_context,
     }, evidence
 
