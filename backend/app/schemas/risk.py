@@ -55,6 +55,7 @@ class ResolveRiskResponse(BaseModel):
 
 class ReviewRiskItem(BaseModel):
     risk_id: int
+    risk_name: Optional[str] = None
     severity: Optional[str] = None
     risk_score: Optional[float] = None
     risk_type: Optional[str] = None
