@@ -226,3 +226,7 @@ def build_review_correlations(risk_id):
             "message":None if rows else "No strongly related review signals identified.",
             "disclaimer":"Review correlations are curated relationships between displayed risk signals; they indicate relevance, not causation.",
             "company_context_available":True}
+
+
+def is_review_risk(risk_id: int) -> bool:
+    return int(risk_id) in CURATED_US_RISK_IDS
