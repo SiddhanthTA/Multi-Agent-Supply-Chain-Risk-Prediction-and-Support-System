@@ -196,6 +196,9 @@ def delete_existing_risk(
 # ---------------------------------------------------------------------------
 
 def _resolution_state(db: Session, risk, user_id: int) -> dict:
+    # Refresh dynamic review membership so direct resolution/status requests
+    # recognize the same presentation risks as the dashboard.
+    presentation_risks(db)
     kinds = get_report_kinds(db, risk.id, user_id)
     curated = is_review_risk(risk.id)
     return {
