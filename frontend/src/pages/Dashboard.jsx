@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { normalizeWorkspaceLocation, WORKSPACE_LOCATIONS } from '@/lib/locationWorkspace';
-import { recentParams } from '@/lib/riskReports';
 
 const fetchDashboardData = async (selectedLocation) => {
   const [reviewEventsRes, reviewRisksRes, locationsRes] = await Promise.all([
