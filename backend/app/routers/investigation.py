@@ -28,6 +28,7 @@ from app.services.review_content import (
     build_review_impact,
     build_review_investigation,
     build_review_response_plan,
+    presentation_risks,
 )
 from app.services.risk_correlation import (
     DISCLAIMER,
@@ -70,6 +71,10 @@ def risk_report_status(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     _require_risk(db, risk_id)
+    # Initialize the dynamic presentation set before checking whether this
+    # risk belongs to the current review workspace. This also makes direct
+    # deep-links behave the same as opening a risk from the dashboard.
+    presentation_risks(db)
     risk = db.query(Risk).filter(Risk.id == risk_id).first()
     if risk and risk.event and build_review_investigation(risk, risk.event):
         return RiskReportStatus(risk_id=risk_id, investigation_exists=True, response_plan_exists=True)
@@ -94,6 +99,9 @@ def get_risk_investigation(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     _require_risk(db, risk_id)
+    # Refresh the deterministic presentation membership before serving
+    # presentation-backed intelligence.
+    presentation_risks(db)
     review_risk = db.query(Risk).filter(Risk.id == risk_id).first()
     if review_risk and review_risk.event:
         curated = build_review_investigation(review_risk, review_risk.event)
