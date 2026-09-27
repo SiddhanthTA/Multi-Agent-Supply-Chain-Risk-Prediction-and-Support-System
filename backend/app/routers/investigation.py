@@ -70,12 +70,9 @@ def risk_report_status(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     _require_risk(db, risk_id)
-    if build_review_investigation(db.query(Risk).filter(Risk.id == risk_id).first(), db.query(Risk).filter(Risk.id == risk_id).first().event) if False else False:
-        pass
-    if build_review_investigation:
-        risk = db.query(Risk).filter(Risk.id == risk_id).first()
-        if risk and build_review_investigation(risk, risk.event):
-            return RiskReportStatus(risk_id=risk_id, investigation_exists=True, response_plan_exists=True)
+    risk = db.query(Risk).filter(Risk.id == risk_id).first()
+    if risk and risk.event and build_review_investigation(risk, risk.event):
+        return RiskReportStatus(risk_id=risk_id, investigation_exists=True, response_plan_exists=True)
     return report_status(db, risk_id, current_user.id)
 
 
