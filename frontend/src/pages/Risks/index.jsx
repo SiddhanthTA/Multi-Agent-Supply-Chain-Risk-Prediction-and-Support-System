@@ -93,7 +93,7 @@ export default function Risks() {
   const filteredRisks = useMemo(() => {
     return risks.filter(risk => {
       const matchesSearch = search === '' || 
-        risk.risk_name?.toLowerCase().includes(search.toLowerCase());
+        `${risk.risk_name || ''} ${risk.title || ''}`.toLowerCase().includes(search.toLowerCase());
       
       const matchesType = typeFilter === '' || risk.risk_type === typeFilter;
       const matchesSeverity = severityFilter === '' || risk.severity === severityFilter;
