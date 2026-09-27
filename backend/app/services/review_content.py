@@ -327,6 +327,15 @@ def build_review_correlations(db, risk_id):
 def is_review_risk(risk_id: int) -> bool:
     return int(risk_id) in CURATED_REVIEW_RISK_IDS
 
+def presentation_location(risk):
+    if risk.id in CURATED_INDIA_RISK_IDS:
+        return 'India'
+    if risk.id in CURATED_GLOBAL_RISK_IDS:
+        return 'Global'
+    if risk.id in CURATED_US_RISK_IDS:
+        return 'United States'
+    return risk.event.location if risk.event else None
+
 def curated_review_risk_ids():
     return CURATED_REVIEW_RISK_IDS
 
