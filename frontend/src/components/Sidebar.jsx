@@ -6,7 +6,6 @@ import {
   TrendingUp,
   Building2,
   CheckCircle2,
-  CloudRain
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +16,6 @@ const navItems = [
   { name: "Resolved Risks", href: "/resolved-risks", icon: CheckCircle2 },
   { name: "Risk Trends", href: "/risk-trends", icon: TrendingUp },
   { name: "Company Profile", href: "/company-profile", icon: Building2 },
-  { name: "Weather Monitoring", href: "/weather", icon: CloudRain },
 ];
 
 export function Sidebar() {
