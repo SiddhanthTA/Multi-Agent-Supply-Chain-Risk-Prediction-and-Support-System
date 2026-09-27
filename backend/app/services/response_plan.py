@@ -1,275 +1,307 @@
-﻿"""Deterministic Agent 2 response-plan templates (DEMO / MOCK).
+"""Runtime response planning from the current risk, event, and company context.
 
-No model inference. Selects a prepared template using the real risk, event,
-company profile and company relevance data already stored in SupplySentry so the
-intended second-stage workflow can be demonstrated. Read-only; no DB writes.
-
-Content describes options for human review only. It never ranks options and
-never invents suppliers, contracts, volumes, inventory, fleet size or losses.
+No per-risk response text is stored in source code. The plan is assembled on each
+request from the actual event title/description, risk assessment, matched company
+dependencies, and the platform recommendation. It is decision support only.
 """
 
 from __future__ import annotations
 
 import re
 
-FUEL_TERMS = (
-    "diesel", "petrol", "gasoline", "fuel", "crude", "oil price", "oil prices",
-    "refinery", "petroleum", "barrel", "brent", "wti",
-)
-MATERIALS_TERMS = (
-    "semiconductor", "semiconductors", "chip", "chips", "wafer", "wafers",
-    "battery", "batteries", "lithium", "copper", "steel", "aluminum", "aluminium",
-    "foundry", "rare earth", "resin", "plastic",
-)
-LOGISTICS_TERMS = (
-    "port", "ports", "shipping", "shipment", "vessel", "container", "freight",
-    "rail", "railway", "truck", "trucking", "warehouse", "customs", "strike",
-    "congestion", "blockade", "rerouting", "sanction", "embargo",
-)
 
-DEMO_NOTE = (
-    "Prepared response options based on the investigated risk and available company "
-    "context. This is a deterministic demonstration template, not a model-generated "
-    "conclusion, and it ranks no option above another."
-)
-NO_EXPOSURE_NOTE = (
-    "SupplySentry holds configured dependencies, not quantitative business exposure. "
-    "Supplier names, purchase terms, shipment volumes, inventory levels, fleet size, "
-    "customer exposure and financial losses are not available and are not assumed "
-    "anywhere in this plan."
-)
+def _normalize(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.casefold().split())
 
 
-def _has(text: str, terms) -> bool:
-    """Word-boundary match so e.g. 'imports' does not match the term 'port'."""
-    return any(re.search(rf"\b{re.escape(term)}\b", text) for term in terms)
+def _dependency_values(company_relevance: dict | None) -> list[str]:
+    values: list[str] = []
+    for match in (company_relevance or {}).get("matched_dependencies") or []:
+        value = match.get("value")
+        if value and value not in {"None", "Other"} and value not in values:
+            values.append(value)
+    return values
+
+
+def _event_text(event: dict) -> str:
+    return _normalize(" ".join(
+        str(part)
+        for part in (
+            event.get("title"),
+            event.get("description"),
+            event.get("category"),
+            event.get("event_type"),
+        )
+        if part
+    ))
+
+
+def _has(text: str, *terms: str) -> bool:
+    return any(re.search(rf"\b{re.escape(term)}(?:s|ed|ing)?\b", text) for term in terms)
 
 
 def select_scenario(event: dict, risk: dict) -> str:
-    """Pick a demo scenario from real stored data only."""
-    text = " ".join(
-        str(event.get(field) or "") for field in ("title", "description", "category")
-    ).casefold()
-    risk_text = f"{risk.get('risk_type') or ''} {risk.get('risk_name') or ''}".casefold()
+    """Choose the response domain from the actual event/risk context."""
+    text = _event_text(event)
+    deps = {_normalize(value) for value in _dependency_values(risk.get("company_relevance"))}
 
-    if _has(text, FUEL_TERMS):
+    if deps & {"diesel", "petrol", "electricity", "coal", "natural gas"} or _has(
+        text, "diesel", "fuel", "electricity", "power", "coal", "gas", "energy"
+    ):
         return "fuel_and_energy"
-    if _has(text, MATERIALS_TERMS):
+    if deps & {
+        "semiconductors", "batteries", "lithium", "copper", "steel",
+        "aluminum", "plastics",
+    } or _has(text, "semiconductor", "chip", "battery", "lithium", "copper", "steel", "aluminum"):
         return "materials_and_supply"
-    if _has(text, LOGISTICS_TERMS):
+    if deps & {"ports", "road", "rail", "sea", "air"} or _has(
+        text, "port", "shipping", "shipment", "freight", "logistics", "route",
+        "rail", "truck", "road", "vessel", "cargo", "blockade", "rerouting",
+    ):
         return "logistics_and_transport"
-    if re.search(r"price|cost|tariff|inflation|market|financial|revenue", f"{text} {risk_text}"):
+    if _has(text, "price", "prices", "cost", "tariff", "market", "revenue", "demand", "inflation"):
         return "financial_market"
     return "general"
 
 
-def _company_clause(company: dict | None, relevance: dict | None, dependencies: list[str]) -> str:
-    if not company:
-        return (
-            "Company-specific context is not configured for this account, so the options below "
-            "focus on verification and monitoring rather than assuming company exposure."
-        )
-    name = company.get("company_name") or "this organization"
-    if (relevance or {}).get("relevance") in {"direct", "indirect"} and dependencies:
-        listed = ", ".join(dependencies)
-        plural = "y" if len(dependencies) == 1 else "ies"
-        return (
-            f"For {name}, the configured {listed} dependenc{plural} make this signal relevant "
-            f"for review. SupplySentry does not hold actual exposure values for these "
-            f"dependencies, so the options below describe checks and options for human review "
-            f"rather than quantified business impact."
-        )
+def _focus(deps: list[str], event: dict, risk: dict) -> str:
+    if deps:
+        return ", ".join(deps[:3])
     return (
-        f"No configured company dependency for {name} currently matches this event. The response "
-        f"options below therefore focus on verification and monitoring rather than assuming "
-        f"direct company exposure."
+        event.get("category")
+        or risk.get("risk_type")
+        or risk.get("risk_name")
+        or "the monitored signal"
     )
 
 
-# Standard option set reused by every scenario. The per-scenario text only
-# supplies the subject wording; option names and structure are fixed so the demo
-# always offers Monitor / Reduce / Escalate for human review.
-OPTION_TEMPLATES = (
-    {
-        "name": "Option 1: Monitor and Verify",
-        "what_to_check": [
-            "Review the current status of {subject} in scope.",
-            "Check which internal activities are exposed to this signal.",
-        ],
-        "why": (
-            "Confirms whether the signal is actually relevant before committing analyst "
-            "time or changing plans."
-        ),
-        "information_required": [
-            "Current internal exposure related to {subject}",
-            "Current status of the underlying event",
-        ],
-    },
-    {
-        "name": "Option 2: Reduce Near-Term Exposure",
-        "what_to_check": [
-            "Review near-term plans and commitments that are sensitive to {subject}.",
-            "Assess whether timing, sourcing, routing, or pricing adjustments are feasible.",
-        ],
-        "why": (
-            "May reduce exposure to a developing signal if the adjustments are "
-            "operationally feasible."
-        ),
-        "information_required": [
-            "Quantified internal exposure and timing",
-            "Available options and their constraints",
-        ],
-    },
-    {
-        "name": "Option 3: Escalate for Review",
-        "what_to_check": [
-            "Review the escalation conditions listed in this plan.",
-            "Consolidate verified internal data before escalating.",
-        ],
-        "why": (
-            "Escalation is appropriate when verified internal data shows the signal "
-            "affects a critical activity and options are constrained."
-        ),
-        "information_required": [
-            "Verified internal impact data",
-            "Documented constraints on available options",
-        ],
-    },
-)
-
-SCENARIO_CONTENT = {
-    "fuel_and_energy": {
-        "subject": "the affected fuel or energy conditions",
-        "objective": (
-            "Assess whether this fuel or energy-related development creates a material "
-            "near-term impact on transportation costs, fuel availability, or delivery "
-            "continuity."
-        ),
-        "immediate_checks": [
-            "Review current fuel-dependent transportation activity in scope.",
-            "Check current fuel procurement, pricing, and availability arrangements.",
-            "Review upcoming activities that depend on the affected fuel type.",
-            "Check whether alternative routing, carriers, or timing are available.",
-        ],
-        "information_required": [
-            "Actual fuel consumption or usage",
-            "Transportation or fleet exposure",
-            "Carrier and fuel contract terms",
-            "Upcoming shipment volume and timing",
-            "Alternative transport availability",
-            "Current fuel-cost exposure",
-        ],
-        "escalation_conditions": [
-            "Internal data shows significant dependence on the affected fuel type.",
-            "A supply constraint or restriction is confirmed by an authoritative source.",
-            "The signal persists or intensifies across consecutive monitoring cycles.",
-        ],
-        "responsible_areas": ["Procurement", "Logistics", "Operations", "Finance"],
-    },
-    "materials_and_supply": {
-        "subject": "the affected material or supply conditions",
-        "objective": (
-            "Assess whether this material or supply development creates a material "
-            "near-term impact on sourcing continuity, production, or delivery schedules."
-        ),
-        "immediate_checks": [
-            "Review current supply conditions for the affected material.",
-            "Check which products or activities depend on the affected material.",
-            "Review current inventory and replenishment position where available.",
-            "Check whether alternative sourcing or substitutes are feasible.",
-        ],
-        "information_required": [
-            "Material usage and criticality by product",
-            "Supplier concentration and sourcing arrangements",
-            "Contracted volumes and lead times",
-            "Inventory levels and replenishment status",
-            "Substitute or alternative material qualification",
-        ],
-        "escalation_conditions": [
-            "The affected material is a confirmed critical input with limited alternatives.",
-            "Supply interruption is confirmed by an authoritative source.",
-            "Inventory or replenishment data shows insufficient cover for near-term plans.",
-        ],
-        "responsible_areas": ["Procurement", "Operations", "Risk / Compliance"],
-    },
+def _event_signal(text: str) -> str:
+    if _has(text, "shortage", "scarcity", "low stock", "dwindling"):
+        return "availability pressure"
+    if _has(text, "price", "prices", "cost", "expensive", "surge"):
+        return "cost pressure"
+    if _has(text, "ban", "restriction", "sanction", "tariff", "export", "embargo"):
+        return "policy or trade pressure"
+    if _has(text, "disruption", "closure", "blockade", "outage", "strike", "delay"):
+        return "continuity pressure"
+    if _has(text, "investment", "partnership", "expansion", "factory", "capacity", "production"):
+        return "capacity or sourcing change"
+    if _has(text, "demand", "sales", "growth", "decline"):
+        return "demand-side change"
+    return "external supply-chain signal"
 
 
+def _company_clause(company: dict | None, relevance: dict | None, deps: list[str]) -> str:
+    if not company:
+        return "No company profile is configured, so internal exposure must be verified before action."
+    if not deps:
+        return (
+            f"{company.get('company_name', 'The company')} has no identified configured dependency "
+            "match for this event; the plan therefore avoids assuming company exposure."
+        )
+    return (
+        f"{company.get('company_name', 'The company')} has configured exposure to "
+        f"{', '.join(deps)}; the plan uses those dependencies as investigation targets, "
+        "not as proof of an actual disruption."
+    )
 
-    "logistics_and_transport": {
-        "subject": "the affected transport or routing conditions",
-        "objective": (
-            "Assess whether this logistics or transport development creates a material "
-            "near-term impact on routing, capacity, or delivery continuity."
-        ),
-        "immediate_checks": [
-            "Review current routing and capacity conditions on affected lanes.",
-            "Check whether near-term movements are exposed to the disruption.",
-            "Review alternative routes, modes, or carriers where feasible.",
-            "Check current customs or border requirements where relevant.",
-        ],
-        "information_required": [
-            "Lane-level shipment volume and timing",
-            "Carrier and routing arrangements",
-            "Available alternative capacity",
-            "Customs or border processing requirements",
-        ],
-        "escalation_conditions": [
-            "Affected lanes are confirmed business-critical and alternatives are limited.",
-            "A closure, blockade, or capacity constraint is confirmed by an authoritative source.",
-            "The disruption persists beyond the expected resolution window.",
-        ],
-        "responsible_areas": ["Logistics", "Operations", "Procurement"],
-    },
-    "financial_market": {
-        "subject": "the market or cost movement",
-        "objective": (
-            "Assess whether this market or cost development creates a material near-term "
-            "impact on cost, pricing, or financial planning."
-        ),
-        "immediate_checks": [
-            "Review the current signal and its direction.",
-            "Check which activities are financially sensitive to the movement.",
-            "Review current committed spend or pricing arrangements where available.",
-            "Check whether planning assumptions require review.",
-        ],
-        "information_required": [
-            "Quantified cost or price exposure by activity",
-            "Contracted volumes and prices",
-            "Budget and planning assumptions",
-            "Margin and cash-flow sensitivity",
-        ],
-        "escalation_conditions": [
-            "Verified data shows material impact on committed spend or plan.",
-            "The movement exceeds internal planning tolerances.",
-            "The signal persists across consecutive monitoring cycles.",
-        ],
-        "responsible_areas": ["Finance", "Procurement", "Risk / Compliance"],
-    },
-    "general": {
-        "subject": "this event",
-        "objective": (
-            "Establish whether this event is relevant to the organization and clarify its "
-            "operational or commercial significance before deciding on further action."
-        ),
-        "immediate_checks": [
-            "Review the current status of the event and the associated risk.",
-            "Check which internal activities could be related to this signal.",
-            "Confirm whether any configured company dependency is affected.",
-        ],
-        "information_required": [
-            "Internal activity data related to the signal",
-            "Current status of the underlying event",
-            "Any dependency exposure data held internally",
-        ],
-        "escalation_conditions": [
-            "Verified internal data shows the signal affects a critical activity.",
-            "The event is confirmed by an authoritative source and is material to operations.",
-            "The signal persists or intensifies across consecutive monitoring cycles.",
-        ],
-        "responsible_areas": ["Operations", "Risk / Compliance"],
-    },
-}
 
+def _scenario_options(
+    scenario: str,
+    focus: str,
+    signal: str,
+    event_title: str,
+) -> tuple[list[dict], list[str], list[str], list[str]]:
+    """Build risk-domain-specific options instead of one universal 3-option template."""
+    if scenario == "materials_and_supply":
+        options = [
+            {
+                "name": f"Map {focus} supplier concentration",
+                "why": f"Tests whether the {signal} described in “{event_title}” reaches a critical material or component source.",
+                "what_to_check": [
+                    f"Identify suppliers and components exposed to {focus}.",
+                    "Check open orders, lead times and inventory cover for affected items.",
+                ],
+                "information_required": ["Supplier concentration", "Open purchase orders", "Inventory cover"],
+            },
+            {
+                "name": f"Qualify an alternative for {focus}",
+                "why": "Creates a continuity path if the affected input is critical and a technically acceptable alternative exists.",
+                "what_to_check": [
+                    f"Identify qualified or near-qualified alternatives for {focus}.",
+                    "Check qualification lead time, capacity and commercial constraints.",
+                ],
+                "information_required": ["Alternative suppliers", "Qualification status", "Available capacity"],
+            },
+            {
+                "name": f"Protect near-term {focus} supply",
+                "why": "Focuses on immediate continuity where replenishment timing is more important than long-term sourcing changes.",
+                "what_to_check": [
+                    "Review critical production and delivery commitments.",
+                    "Check whether existing inventory or purchase commitments can bridge the signal window.",
+                ],
+                "information_required": ["Critical production dates", "Inventory cover", "Supplier commitments"],
+            },
+        ]
+        required = ["Supplier concentration", "Open purchase orders", "Inventory cover", "Alternative supplier capacity"]
+        areas = ["Procurement", "Supplier Management", "Operations", "Engineering"]
+        escalation = [
+            f"Internal data confirms material exposure to {focus}.",
+            "A critical input has insufficient cover and no qualified alternative.",
+            "The external signal persists or intensifies across monitoring cycles.",
+        ]
+    elif scenario == "fuel_and_energy":
+        options = [
+            {
+                "name": f"Measure {focus} cost sensitivity",
+                "why": f"Separates the external {signal} from the company's actual transportation or energy cost exposure.",
+                "what_to_check": [
+                    f"Measure current fuel or energy usage linked to {focus}.",
+                    "Compare current prices or surcharges with planning assumptions.",
+                ],
+                "information_required": ["Usage volumes", "Current price exposure", "Budget assumptions"],
+            },
+            {
+                "name": f"Review sourcing and contract flexibility for {focus}",
+                "why": "Identifies whether procurement terms can absorb a price or availability change without immediate disruption.",
+                "what_to_check": [
+                    "Review supplier, carrier and fuel-contract terms.",
+                    "Check alternative suppliers, pricing mechanisms and replenishment options.",
+                ],
+                "information_required": ["Contract terms", "Supplier alternatives", "Fuel/energy availability"],
+            },
+            {
+                "name": f"Adjust transport or operating plans around {focus}",
+                "why": "Addresses near-term continuity if fuel or energy conditions begin affecting critical activities.",
+                "what_to_check": [
+                    "Identify fuel-sensitive shipments or operations.",
+                    "Assess consolidation, timing, routing or mode alternatives where feasible.",
+                ],
+                "information_required": ["Critical shipments", "Transport modes", "Operational schedules"],
+            },
+        ]
+        required = ["Usage volumes", "Contract terms", "Current price exposure", "Alternative supply or transport capacity"]
+        areas = ["Procurement", "Logistics", "Operations", "Finance"]
+        escalation = [
+            f"Verified internal data shows material {focus} cost or availability exposure.",
+            "A critical activity faces confirmed supply constraints with limited alternatives.",
+            "Cost or continuity exposure exceeds internal planning tolerances.",
+        ]
+    elif scenario == "logistics_and_transport":
+        options = [
+            {
+                "name": f"Map exposed {focus} lanes",
+                "why": f"Determines whether the {signal} in “{event_title}” affects actual inbound or outbound movement.",
+                "what_to_check": [
+                    f"Identify shipments and suppliers using {focus}.",
+                    "Compare affected lanes with delivery commitments and inventory cover.",
+                ],
+                "information_required": ["Lane volumes", "Shipment schedules", "Inventory cover"],
+            },
+            {
+                "name": f"Prepare alternate routing for {focus}",
+                "why": "Reduces dependency on a constrained route, carrier or node when a practical alternative exists.",
+                "what_to_check": [
+                    "Check alternative ports, carriers, routes or transport modes.",
+                    "Compare capacity, transit time and incremental cost.",
+                ],
+                "information_required": ["Alternative capacity", "Transit times", "Freight quotes"],
+            },
+            {
+                "name": f"Prioritize critical movements through {focus}",
+                "why": "Protects business-critical deliveries when capacity is temporarily constrained.",
+                "what_to_check": [
+                    "Rank upcoming movements by production and customer impact.",
+                    "Check expedited options only for shipments whose delay has material consequences.",
+                ],
+                "information_required": ["Critical delivery dates", "Customer commitments", "Expedite capacity"],
+            },
+        ]
+        required = ["Lane-level shipment volume", "Carrier/routing arrangements", "Alternative capacity", "Delivery commitments"]
+        areas = ["Logistics", "Operations", "Procurement", "Supply Planning"]
+        escalation = [
+            f"A business-critical lane is confirmed exposed to the {focus} disruption.",
+            "Alternative routing or carrier capacity is insufficient.",
+            "Transit-time or cost impact exceeds internal service thresholds.",
+        ]
+    elif scenario == "financial_market":
+        options = [
+            {
+                "name": f"Trace {focus} cost transmission",
+                "why": f"Tests how the {signal} in “{event_title}” reaches procurement, operating cost or pricing.",
+                "what_to_check": [
+                    f"Identify activities whose cost structure depends on {focus}.",
+                    "Compare current exposure with budget and pricing assumptions.",
+                ],
+                "information_required": ["Cost exposure", "Contracted prices", "Budget assumptions"],
+            },
+            {
+                "name": f"Review contract and pricing flexibility",
+                "why": "Determines whether existing commercial terms can absorb or pass through the identified change.",
+                "what_to_check": [
+                    "Review price-adjustment, surcharge and renegotiation clauses.",
+                    "Check committed volumes and upcoming renewal points.",
+                ],
+                "information_required": ["Contract clauses", "Committed volumes", "Renewal dates"],
+            },
+            {
+                "name": f"Stress-test the near-term plan",
+                "why": "Shows whether the event matters to cash flow, margin or delivery plans without assuming a loss has already occurred.",
+                "what_to_check": [
+                    "Run internal sensitivity cases using verified exposure data.",
+                    "Identify thresholds that would require management review.",
+                ],
+                "information_required": ["Margin sensitivity", "Cash-flow sensitivity", "Planning thresholds"],
+            },
+        ]
+        required = ["Quantified cost exposure", "Contracted volumes and prices", "Budget assumptions", "Margin sensitivity"]
+        areas = ["Finance", "Procurement", "Operations", "Risk / Compliance"]
+        escalation = [
+            "Verified data shows material impact on committed spend, margin or plan.",
+            "The movement exceeds internal financial planning tolerances.",
+            "The signal persists and materially changes near-term assumptions.",
+        ]
+    else:
+        options = [
+            {
+                "name": f"Validate exposure to {focus}",
+                "why": f"Connects the specific event “{event_title}” to actual internal activity before action is considered.",
+                "what_to_check": [
+                    f"Map suppliers, operations, routes or services related to {focus}.",
+                    "Check current commitments and dependency concentration.",
+                ],
+                "information_required": ["Internal exposure data", "Current commitments", "Dependency concentration"],
+            },
+            {
+                "name": f"Prepare continuity options for {focus}",
+                "why": f"Identifies practical alternatives if the {signal} becomes materially relevant.",
+                "what_to_check": [
+                    f"Identify substitute suppliers, routes, services or operating arrangements for {focus}.",
+                    "Compare feasibility, lead time and constraints.",
+                ],
+                "information_required": ["Alternative capacity", "Lead times", "Operational constraints"],
+            },
+            {
+                "name": f"Set review triggers for {focus}",
+                "why": "Creates a clear evidence threshold for escalation instead of treating the external signal as a confirmed disruption.",
+                "what_to_check": [
+                    "Define the internal metrics that would confirm material exposure.",
+                    "Track the event for persistence, escalation or reversal.",
+                ],
+                "information_required": ["Exposure thresholds", "Event status", "Internal monitoring metrics"],
+            },
+        ]
+        required = ["Internal exposure data", "Current commitments", "Alternative capacity", "Monitoring thresholds"]
+        areas = ["Operations", "Procurement", "Risk / Compliance"]
+        escalation = [
+            f"Internal evidence confirms material exposure to {focus}.",
+            "The affected activity is business-critical and alternatives are constrained.",
+            "The signal persists or intensifies across subsequent monitoring cycles.",
+        ]
+
+    return options, required, escalation, areas
 
 
 def build_response_plan(
@@ -280,70 +312,65 @@ def build_response_plan(
     company_relevance: dict | None,
     platform_recommendation: dict | None,
 ) -> dict:
-    """Build a deterministic demo response plan from real stored context."""
-    scenario = select_scenario(event, risk)
-    content = SCENARIO_CONTENT[scenario]
-    # A value can legitimately be configured under more than one category (for
-    # example Semiconductors under Materials and Technology). Keep the distinct
-    # values for display, preserving first-seen order.
-    dependencies = []
-    for match in ((company_relevance or {}).get("matched_dependencies") or []):
-        value = match.get("value")
-        if value and value not in dependencies:
-            dependencies.append(value)
-    clause = _company_clause(company, company_relevance, dependencies)
+    """Build a fresh response plan from the supplied risk/event context."""
+    relevance = company_relevance or {}
+    deps = _dependency_values(relevance)
+    risk_context = dict(risk)
+    risk_context["company_relevance"] = relevance
 
-    notes = [DEMO_NOTE, NO_EXPOSURE_NOTE, clause]
-    if not company:
-        notes.append(
-            "No company profile is configured for this account, so this plan is intentionally "
-            "generic and verification-oriented."
-        )
-    elif not dependencies:
-        notes.append(
-            "No configured company dependency matches this event, so no company-specific "
-            "exposure is assumed in any option above."
-        )
+    scenario = select_scenario(event, risk_context)
+    text = _event_text(event)
+    focus = _focus(deps, event, risk)
+    signal = _event_signal(text)
+    title = event.get("title") or "the monitored event"
+    options, required, escalation, areas = _scenario_options(
+        scenario, focus, signal, title
+    )
 
-    options = [
-        {
-            "name": template["name"],
-            "what_to_check": [
-                item.format(subject=content["subject"])
-                for item in template["what_to_check"]
-            ],
-            "why": template["why"],
-            "information_required": [
-                item.format(subject=content["subject"])
-                for item in template["information_required"]
-            ],
-        }
-        for template in OPTION_TEMPLATES
+    company_name = (company or {}).get("company_name")
+    industry = (company or {}).get("industry")
+    notes = [
+        _company_clause(company, relevance, deps),
+        "This plan is generated at request time from the current stored event, risk assessment and company context.",
+        "Options are decision support for human review; no business action is executed automatically.",
     ]
+    if platform_recommendation:
+        notes.append("The existing platform recommendation is shown separately and was not treated as an AI-generated response action.")
+
+    risk_name = risk.get("risk_name") or risk.get("risk_type") or "Risk"
+    severity = risk.get("severity") or "Unrated"
+    score = risk.get("risk_score")
+    score_text = f"{float(score):.2f}" if isinstance(score, (int, float)) else "not available"
 
     return {
         "risk_id": risk.get("id"),
         "event_id": event.get("id"),
         "scenario": scenario,
-        "generated_by": "deterministic-response-plan",
-        "is_demo_template": True,
+        "generated_by": "runtime-context-response-planner",
+        "is_demo_template": False,
         "company_context_available": bool(company),
-        "company_name": (company or {}).get("company_name"),
-        "company_industry": (company or {}).get("industry"),
-        "company_relevance": (company_relevance or {}).get("relevance"),
-        "matched_dependencies": dependencies,
+        "company_name": company_name,
+        "company_industry": industry,
+        "company_relevance": relevance.get("relevance"),
+        "matched_dependencies": deps,
         "risk_summary": (
-            f"{risk.get('risk_name') or 'Risk'} ({risk.get('risk_type') or 'Unclassified'}) "
-            f"rated {risk.get('severity') or 'Unknown'} with a score of "
-            f"{risk.get('risk_score')}, linked to event “{event.get('title') or 'an event'}” "
-            f"in {event.get('location') or 'Unknown'}."
+            f"“{title}” is linked to {risk_name}, rated {severity}, with a stored risk "
+            f"score of {score_text}. The response plan focuses on {focus} and the observed "
+            f"{signal} in the event."
         ),
-        "response_objective": content["objective"],
-        "immediate_checks": list(content["immediate_checks"]),
+        "response_objective": (
+            f"Determine whether “{title}” creates a verified business exposure for "
+            f"{company_name or 'the company'} and choose proportionate next steps for {focus}."
+        ),
+        "immediate_checks": [
+            f"Confirm the current status and evidence behind “{title}”.",
+            f"Verify internal exposure connected to {focus}.",
+            f"Check whether the {signal} is already affecting commitments, capacity, cost or timing.",
+        ],
         "response_options": options,
-        "information_required": list(content["information_required"]),
-        "escalation_conditions": list(content["escalation_conditions"]),
-        "responsible_areas": list(content["responsible_areas"]),
+        "information_required": required,
+        "escalation_conditions": escalation,
+        "responsible_areas": areas,
         "platform_recommendation": platform_recommendation,
         "notes": notes,
         "decision_support_only": True,
