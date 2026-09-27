@@ -321,7 +321,7 @@ def risk_correlations(
     risk = db.query(Risk).filter(Risk.id == risk_id).first()
     if risk is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk not found.")
-    curated = build_review_correlations(risk_id)
+    curated = build_review_correlations(db, risk_id)
     if curated is not None:
         return RiskCorrelationResponse.model_validate(curated)
 
