@@ -12,9 +12,9 @@ DATA_LIMITATIONS = [
 ]
 
 # Real U.S. risks retained for the presentation. Risk 396 is intentionally absent.
-CURATED_US_RISK_IDS = {292, 436, 550, 724, 731, 1019, 1035, 1265, 1360, 1373, 1419}
-CURATED_INDIA_RISK_IDS = {701, 224, 715, 95, 1131}
-CURATED_GLOBAL_RISK_IDS = {391, 109, 101}
+CURATED_US_RISK_IDS = {292, 101, 1035, 1265, 1360, 1373}
+CURATED_INDIA_RISK_IDS = {701, 224, 95, 1131}
+CURATED_GLOBAL_RISK_IDS = {391, 109, 101, 724}
 CURATED_REVIEW_RISK_IDS = CURATED_US_RISK_IDS | CURATED_INDIA_RISK_IDS | CURATED_GLOBAL_RISK_IDS
 # Existing stored risks selected for the India/global review workspaces.
 # These IDs are only surfaced in the presentation layer; underlying records are unchanged.
