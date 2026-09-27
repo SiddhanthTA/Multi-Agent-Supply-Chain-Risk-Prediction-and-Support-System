@@ -28,7 +28,7 @@ from app.schemas.risk import (
 )
 
 from app.schemas.trends import RiskTrendResponse
-from app.services.review_content import is_review_risk
+from app.services.review_content import is_review_risk, presentation_risks
 from app.services.risk_trends import (
     ALLOWED_RANGES,
     DEFAULT_RANGE,
@@ -85,7 +85,7 @@ def read_resolved_risks(
 ):
     """Risks that have completed the investigate/plan/resolve lifecycle."""
     rows = get_risks(db)
-    return [_risk_item(risk) for risk in rows if is_resolved(risk)]
+    return [_risk_item(risk) for risk in presentation_risks(db) if is_resolved(risk)]
 
 
 def _risk_item(risk, selection_reason: str | None = None) -> ReviewRiskItem:
@@ -119,9 +119,7 @@ def read_review_set(
     prioritised from the wider event stream. Resolved risks are excluded here
     and appear under /risks/resolved/list instead.
     """
-    from app.crud.risk import get_review_risks
-
-    entries = get_review_risks(db)
+    entries = presentation_risks(db)
     selected = (location or "all").strip()
 
     def matches(item):
@@ -137,9 +135,9 @@ def read_review_set(
         return value == selected
 
     items = [
-        _risk_item(e.risk, e.selection_reason)
-        for e in entries
-        if e.risk and not is_resolved(e.risk) and matches(_risk_item(e.risk, e.selection_reason))
+        _risk_item(risk)
+        for risk in entries
+        if risk and not is_resolved(risk) and matches(_risk_item(risk))
     ]
     counts = {"High": 0, "Medium": 0, "Low": 0}
     for item in items:
