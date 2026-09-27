@@ -20,7 +20,7 @@ const RISK_TYPES = [
   { name: 'Political', count: 4 },
 ];
 
-const RANGE_OPTIONS = [{ value: 7, label: '7 days' }, { value: 14, label: '14 days' }, { value: 30, label: '30 days' }];
+const RANGE_OPTIONS = [{ value: 7, label: '7 days' }];
 
 function TooltipContent({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -38,14 +38,8 @@ function TooltipContent({ active, payload, label }) {
 }
 
 export default function RiskTrendsPanel({ variant = 'card' }) {
-  const [days, setDays] = useState(7);
-  const daily = useMemo(() => {
-    if (days === 7) return DEMO_TREND;
-    return Array.from({ length: days }, (_, index) => {
-      const source = DEMO_TREND[index % DEMO_TREND.length];
-      return { ...source, date: index < 7 ? source.date : `Sep ${28 + index - 7}` };
-    });
-  }, [days]);
+  const [days] = useState(7);
+  const daily = useMemo(() => DEMO_TREND, []);
 
   const total = daily.reduce((sum, row) => sum + row.total, 0);
   const high = daily.reduce((sum, row) => sum + row.High, 0);
