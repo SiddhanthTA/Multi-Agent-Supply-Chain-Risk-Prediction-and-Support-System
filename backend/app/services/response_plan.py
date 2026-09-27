@@ -43,26 +43,36 @@ def _has(text: str, *terms: str) -> bool:
 
 
 def select_scenario(event: dict, risk: dict) -> str:
-    """Choose the response domain from the actual event/risk context."""
+    """Choose the response domain from the strongest signal in the event first."""
     text = _event_text(event)
     deps = {_normalize(value) for value in _dependency_values(risk.get("company_relevance"))}
 
-    if deps & {"diesel", "petrol", "electricity", "coal", "natural gas"} or _has(
-        text, "diesel", "fuel", "electricity", "power", "coal", "gas", "energy"
+    # Event-specific language wins over an unrelated configured dependency.
+    # This keeps a port event from becoming a fuel plan merely because the
+    # company also happens to depend on diesel.
+    if _has(
+        text, "semiconductor", "chip", "battery", "lithium", "copper", "steel", "aluminum"
     ):
-        return "fuel_and_energy"
-    if deps & {
-        "semiconductors", "batteries", "lithium", "copper", "steel",
-        "aluminum", "plastics",
-    } or _has(text, "semiconductor", "chip", "battery", "lithium", "copper", "steel", "aluminum"):
         return "materials_and_supply"
-    if deps & {"ports", "road", "rail", "sea", "air"} or _has(
+    if _has(
         text, "port", "shipping", "shipment", "freight", "logistics", "route",
         "rail", "truck", "road", "vessel", "cargo", "blockade", "rerouting",
     ):
         return "logistics_and_transport"
+    if _has(
+        text, "diesel", "fuel", "electricity", "power", "coal", "gas", "energy"
+    ):
+        return "fuel_and_energy"
     if _has(text, "price", "prices", "cost", "tariff", "market", "revenue", "demand", "inflation"):
         return "financial_market"
+
+    # If the event itself is sparse, use the company's matched dependency.
+    if deps & {"semiconductors", "batteries", "lithium", "copper", "steel", "aluminum", "plastics"}:
+        return "materials_and_supply"
+    if deps & {"ports", "road", "rail", "sea", "air"}:
+        return "logistics_and_transport"
+    if deps & {"diesel", "petrol", "electricity", "coal", "natural gas"}:
+        return "fuel_and_energy"
     return "general"
 
 
