@@ -267,7 +267,7 @@ export default function Dashboard() {
                       {companyRelevanceLevel(row)} relevance
                       {row.reason ? ` - ${row.reason}` : ''}
                     </p>
-                    {risk && (
+                    {risk?.location === 'United States' && (
                       <Button size="sm" variant="outline" className="mt-2" onClick={() => navigate(`/risks/${risk.id}`)}>
                         View Risk
                       </Button>
@@ -329,7 +329,9 @@ function CurrentRiskCards({ risks, isLoading, onOpen }) {
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <SeverityBadge severity={risk.severity} />
-              <Button size="sm" variant="outline" onClick={() => onOpen(risk.risk_id)}>View Risk</Button>
+              {risk.location === 'United States' && (
+                <Button size="sm" variant="outline" onClick={() => onOpen(risk.risk_id)}>View Risk</Button>
+              )}
             </div>
           </div>
         </div>
