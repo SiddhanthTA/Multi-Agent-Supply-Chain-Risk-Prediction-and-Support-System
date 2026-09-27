@@ -23,7 +23,6 @@ import RiskResponsePlanPage from "@/pages/Risks/ResponsePlan";
 import RiskCorrelationsPage from "@/pages/Risks/Correlations";
 import RiskSupplyChainImpactPage from "@/pages/Risks/SupplyChainImpact";
 import ResolvedRisks from "@/pages/ResolvedRisks";
-import WeatherMonitoring from "@/pages/WeatherMonitoring";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 function App() {
