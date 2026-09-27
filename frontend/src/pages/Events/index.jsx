@@ -18,7 +18,6 @@ import {
 import { Search, X, ChevronLeft, ChevronRight, MapPin, Calendar, Activity, AlertTriangle, AlertCircle, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatLocationDisplay } from '@/lib/locationDisplay';
-import { recentParams } from '@/lib/riskReports';
 import { CompanyRelevanceBadge, CompanyRelevanceMatches } from '@/components/CompanyRelevance';
 import { companyRelevanceOptions, isCompanyRelevant } from '@/lib/riskInvestigation';
 import { WORKSPACE_LOCATIONS, normalizeWorkspaceLocation } from '@/lib/locationWorkspace';
