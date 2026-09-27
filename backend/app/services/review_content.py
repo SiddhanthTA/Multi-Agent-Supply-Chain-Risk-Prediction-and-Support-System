@@ -1,26 +1,14 @@
-"""Presentation-specific content for the real curated review risks."""
+"""Presentation-specific selection of real stored risks for the dashboard."""
 
 from datetime import datetime, timezone
 
 from app.models.risk import Risk
-from app.models.review_risk import ReviewRisk
 
-DATA_LIMITATIONS = [
-    "SupplySentry does not store this company's supplier contracts, purchase volumes, shipment volumes, inventory cover, or customer commitments.",
-    "The event establishes an external signal, not a confirmed loss or disruption for Test Electronics.",
-    "Any operational or financial magnitude must be verified against internal company records before action.",
-]
-
-# Real U.S. risks retained for the presentation. Risk 396 is intentionally absent.
-CURATED_US_RISK_IDS = {292, 101, 1035, 1265, 1360, 1373}
-CURATED_INDIA_RISK_IDS = {701, 224, 95, 1131}
-CURATED_GLOBAL_RISK_IDS = {391, 109, 724}
-CURATED_REVIEW_RISK_IDS = CURATED_US_RISK_IDS | CURATED_INDIA_RISK_IDS | CURATED_GLOBAL_RISK_IDS
-# Existing stored risks selected for the India/global review workspaces.
-# These IDs are only surfaced in the presentation layer; underlying records are unchanged.
-CURATED_INDIA_RISK_IDS = {701, 224, 715, 95, 1131}
-CURATED_GLOBAL_RISK_IDS = {391, 109, 101}
-CURATED_REVIEW_RISK_IDS = CURATED_US_RISK_IDS | CURATED_INDIA_RISK_IDS | CURATED_GLOBAL_RISK_IDS
+# These sets are populated by presentation_risks() from the current stored data.
+CURATED_US_RISK_IDS = set()
+CURATED_INDIA_RISK_IDS = set()
+CURATED_GLOBAL_RISK_IDS = set()
+CURATED_REVIEW_RISK_IDS = set()
 
 # ---------------------------------------------------------------------------
 # Dynamic presentation curation
