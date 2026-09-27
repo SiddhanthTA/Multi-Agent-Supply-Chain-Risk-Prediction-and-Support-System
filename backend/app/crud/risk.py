@@ -6,7 +6,6 @@ from app.models.risk import Risk
 from app.models.review_risk import ReviewRisk
 from app.crud.risk_report import get_report_kinds
 from app.models.risk_report import KIND_INVESTIGATION, KIND_RESPONSE_PLAN
-from app.services.review_content import is_review_risk
 from app.schemas.risk import RiskCreate, RiskUpdate
 
 # Resolution is a lifecycle state stored on the existing Risk.status field.
@@ -31,8 +30,6 @@ def is_risk_resolvable(db: Session, risk: Risk | None, user_id: int) -> bool:
     """
     if risk is None or is_resolved(risk):
         return False
-    if is_review_risk(risk.id):
-        return True
     kinds = get_report_kinds(db, risk.id, user_id)
     return KIND_INVESTIGATION in kinds and KIND_RESPONSE_PLAN in kinds
 
