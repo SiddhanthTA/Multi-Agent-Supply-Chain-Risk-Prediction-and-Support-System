@@ -103,7 +103,7 @@ export default function Dashboard() {
     ) || Number(b.risk_score || 0) - Number(a.risk_score || 0));
   }, [data?.risks]);
 
-  const highlightedRisks = useMemo(() => currentRisks.slice(0, 10), [currentRisks]);
+  const highlightedRisks = useMemo(() => currentRisks, [currentRisks]);
   const highCriticalCount = useMemo(
     () => currentRisks.filter((r) => ['high', 'critical'].includes(String(r.severity || '').toLowerCase())).length,
     [currentRisks],
