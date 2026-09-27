@@ -4,8 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
-  Building2,
-  CloudRain,
   MapPin,
   RefreshCcw,
   ShieldAlert,
@@ -15,7 +13,6 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
-import WeatherRiskMap from '@/components/WeatherRiskMap';
 import {
   buildWeatherCityStates,
   filterEventsByWorkspace,
@@ -25,8 +22,7 @@ import {
   refreshWeatherLocations,
   WORKSPACE_LOCATIONS,
 } from '@/lib/locationWorkspace';
-import { companyRelevanceLevel } from '@/lib/riskInvestigation';
-import { fetchCurrentRisks, recentParams } from '@/lib/riskReports';
+import { recentParams } from '@/lib/riskReports';
 
 const fetchDashboardData = async (selectedLocation) => {
   const [reviewEventsRes, reviewRisksRes, weatherEventsRes, locationsRes, companyRes] = await Promise.all([
@@ -34,14 +30,11 @@ const fetchDashboardData = async (selectedLocation) => {
     api.get('/risks/review-set', { params: { location: selectedLocation } }),
     api.get('/events/', { params: recentParams() }),
     api.get('/locations/'),
-    api.get('/company-profile/relevance').catch(() => null),
   ]);
   return {
     events: reviewEventsRes.data,
     risks: reviewRisksRes.data?.items || [],
-    weatherEvents: weatherEventsRes.data,
     locations: locationsRes.data,
-    companyRelevance: companyRes?.data || null,
   };
 };
 
@@ -88,84 +81,25 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const [selectedLocation, setSelectedLocation] = useState(() =>
     normalizeWorkspaceLocation(localStorage.getItem('supplysentry-location')));
-  const [weatherScope] = useState('global');
-  const autoWeatherLoaded = useRef(false);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['dashboardWorkspace', selectedLocation],
     queryFn: () => fetchDashboardData(selectedLocation),
     refetchInterval: 30000,
   });
-  const { data: currentRiskData } = useQuery({
-    queryKey: ['currentRisks'],
-    queryFn: fetchCurrentRisks,
-    staleTime: 60 * 1000,
-  });
-
-  const weatherMutation = useMutation({
-    mutationFn: (locations) => refreshWeatherLocations(
-      locations,
-      (location) => api.post(`/events/weather/store?location=${encodeURIComponent(location)}`),
-    ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dashboardWorkspace'] }),
-  });
-
-  useEffect(() => {
-    if (autoWeatherLoaded.current || isLoading || !data?.locations) return;
-    autoWeatherLoaded.current = true;
-    const locations = getWeatherLocationsForScope(data.locations, weatherScope);
-    if (locations.length) weatherMutation.mutate(locations);
-  }, [isLoading, data?.locations, weatherScope, weatherMutation]);
-
   const selectedDefinition =
     WORKSPACE_LOCATIONS.find((l) => l.id === selectedLocation) || WORKSPACE_LOCATIONS[0];
-  const filteredEvents = useMemo(
-    () => filterEventsByWorkspace(data?.events, selectedLocation, data?.locations),
-    [data?.events, data?.locations, selectedLocation],
-  );
-  const filteredEventIds = useMemo(
-    () => new Set(filteredEvents.map((event) => event.id)), [filteredEvents]);
-  const filteredRisks = useMemo(
-    () => (data?.risks || []).filter((risk) => filteredEventIds.has(risk.event_id)),
-    [data?.risks, filteredEventIds],
-  );
-  const selectedWeatherLocations = useMemo(
-    () => getWeatherLocationsForScope(data?.locations, weatherScope),
-    [data?.locations, weatherScope],
-  );
-  const scopedWeatherCityStates = useMemo(
-    () => buildWeatherCityStates(data?.locations, data?.weatherEvents, data?.risks)
-      .filter((s) => selectedWeatherLocations.some((l) => l.id === s.location.id)),
-    [data?.locations, data?.events, data?.risks, selectedWeatherLocations],
-  );
-
-  // Risks currently surfaced for the selected workspace. SupplySentry detects a
-  // very large event stream, but only a smaller classified set is actionable.
   const currentRisks = useMemo(() => {
-    const scoped = (currentRiskData?.items || []).filter((item) =>
-      matchesWorkspaceLocation(item.location, selectedLocation, data?.locations));
-    return scoped.sort((a, b) => (
+    return [...(data?.risks || [])].sort((a, b) => (
       (SEVERITY_RANK[String(a.severity || '').toLowerCase()] ?? 4)
       - (SEVERITY_RANK[String(b.severity || '').toLowerCase()] ?? 4)
     ) || Number(b.risk_score || 0) - Number(a.risk_score || 0));
-  }, [currentRiskData, selectedLocation, data?.locations]);
+  }, [data?.risks]);
 
-  // Bounded subset keeps the dashboard readable; Risks page has the full list.
-  const highlightedRisks = useMemo(() => currentRisks.slice(0, 8), [currentRisks]);
+  const highlightedRisks = useMemo(() => currentRisks.slice(0, 10), [currentRisks]);
   const highCriticalCount = useMemo(
     () => currentRisks.filter((r) => ['high', 'critical'].includes(String(r.severity || '').toLowerCase())).length,
     [currentRisks],
-  );
-
-  const companyRelevance = data?.companyRelevance || null;
-  const workspaceEventIds = useMemo(
-    () => new Set(filteredEvents.map((event) => event.id)), [filteredEvents]);
-  const companyRelevantRows = useMemo(
-    () => (companyRelevance?.events || []).filter((row) => {
-      const level = companyRelevanceLevel(row);
-      return (level === 'direct' || level === 'indirect') && workspaceEventIds.has(row.event_id);
-    }),
-    [companyRelevance, workspaceEventIds],
   );
 
   const changeLocation = (value) => {
@@ -227,79 +161,18 @@ export default function Dashboard() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldAlert className="h-4 w-4 text-destructive" /> Company-relevant risks
+            <ShieldAlert className="h-4 w-4 text-destructive" /> Current risks
           </CardTitle>
           <CardDescription>
-            Highest-priority company-relevant risks in this workspace, ordered by severity and risk score.
+            Curated risks across the selected workspace, ordered by severity and risk score.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <CurrentRiskCards
             risks={highlightedRisks}
-            isLoading={isLoading || !currentRiskData}
+            isLoading={isLoading}
             onOpen={(riskId) => navigate(`/risks/${riskId}`)}
           />
-        </CardContent>
-      </Card>
-
-      {companyRelevance ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Building2 className="h-4 w-4 text-primary" /> Company relevant intelligence
-            </CardTitle>
-            <CardDescription>
-              {companyRelevance.company_name
-                ? `${companyRelevance.company_name} - ${companyRelevance.industry}`
-                : 'Matches against your configured company dependencies.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2.5">
-            {companyRelevantRows.length ? (
-              companyRelevantRows.slice(0, 6).map((row) => {
-                const risk = filteredRisks.find((r) => r.event_id === row.event_id);
-                return (
-                  <div key={row.event_id} className="rounded-lg border border-border/60 bg-muted/10 p-3">
-                    <p className="text-sm font-medium text-foreground">
-                      {row.title || `Event ${row.event_id}`}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {companyRelevanceLevel(row)} relevance
-                      {row.reason ? ` - ${row.reason}` : ''}
-                    </p>
-                    {risk?.location === 'United States' && (
-                      <Button size="sm" variant="outline" className="mt-2" onClick={() => navigate(`/risks/${risk.risk_id}`)}>
-                        View Risk
-                      </Button>
-                    )}
-                  </div>
-                );
-              })
-            ) : (
-              <EmptyState text="No company-relevant risks are currently identified for this workspace. General intelligence remains available in the Events view." />
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CloudRain className="h-4 w-4 text-primary" /> Weather monitoring
-          </CardTitle>
-          <CardDescription>
-            {selectedWeatherLocations.length} monitoring{' '}
-            {selectedWeatherLocations.length === 1 ? 'location' : 'locations'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? <Skeleton className="h-[420px] w-full" /> : <WeatherRiskMap cityStates={scopedWeatherCityStates} />}
-          {weatherRefreshSummary.length > 0 && (
-            <div className="mt-3 text-xs text-muted-foreground">
-              {weatherRefreshSummary.filter((i) => i.status === 'success').length} updated;{' '}
-              {weatherRefreshSummary.filter((i) => i.status === 'error').length} failed.
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>
@@ -309,7 +182,7 @@ export default function Dashboard() {
 function CurrentRiskCards({ risks, isLoading, onOpen }) {
   if (isLoading) return <Skeleton className="h-48 w-full" />;
   if (!risks.length) {
-    return <EmptyState text="No company-relevant risks are currently identified for this workspace. General intelligence remains available in the Events view." />;
+    return <EmptyState text="No active risks are currently identified for this workspace." />;
   }
   return (
     <div className="grid gap-2.5">
@@ -329,9 +202,7 @@ function CurrentRiskCards({ risks, isLoading, onOpen }) {
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <SeverityBadge severity={risk.severity} />
-              {risk.location === 'United States' && (
-                <Button size="sm" variant="outline" onClick={() => onOpen(risk.risk_id)}>View Risk</Button>
-              )}
+              <Button size="sm" variant="outline" onClick={() => onOpen(risk.risk_id)}>View Risk</Button>
             </div>
           </div>
         </div>
