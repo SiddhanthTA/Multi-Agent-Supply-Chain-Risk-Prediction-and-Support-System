@@ -268,7 +268,7 @@ export default function Dashboard() {
                       {row.reason ? ` - ${row.reason}` : ''}
                     </p>
                     {risk?.location === 'United States' && (
-                      <Button size="sm" variant="outline" className="mt-2" onClick={() => navigate(`/risks/${risk.id}`)}>
+                      <Button size="sm" variant="outline" className="mt-2" onClick={() => navigate(`/risks/${risk.risk_id}`)}>
                         View Risk
                       </Button>
                     )}
