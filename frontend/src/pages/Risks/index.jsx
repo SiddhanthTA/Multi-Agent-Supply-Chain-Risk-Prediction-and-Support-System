@@ -18,10 +18,11 @@ import {
 import { Search, X, ChevronLeft, ChevronRight, ShieldAlert, Calendar, AlertTriangle, RefreshCw, AlertCircle, BarChart3 } from 'lucide-react';
 import { format } from 'date-fns';
 import { recentParams } from '@/lib/riskReports';
+import { WORKSPACE_LOCATIONS, normalizeWorkspaceLocation } from '@/lib/locationWorkspace';
 
-const fetchRisks = async () => {
-  const response = await api.get('/risks/', { params: recentParams() });
-  return response.data;
+const fetchRisks = async (location) => {
+  const response = await api.get('/risks/review-set', { params: { location } });
+  return response.data?.items || [];
 };
 
 const getScoreColor = (score) => {
@@ -34,9 +35,10 @@ const getScoreColor = (score) => {
 
 export default function Risks() {
   const navigate = useNavigate();
+  const [selectedLocation, setSelectedLocation] = useState(() => normalizeWorkspaceLocation(localStorage.getItem('supplysentry-location')));
   const { data: risks = [], isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['risksList'],
-    queryFn: fetchRisks,
+    queryKey: ['risksList', selectedLocation],
+    queryFn: () => fetchRisks(selectedLocation),
   });
 
   const [search, setSearch] = useState('');
@@ -143,6 +145,20 @@ export default function Risks() {
             Risk Intelligence
           </h2>
           <p className="text-muted-foreground mt-1">Analyze, prioritize, and manage supply chain risks across your network.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-muted-foreground">Workspace</label>
+          <select
+            value={selectedLocation}
+            onChange={(e) => {
+              setSelectedLocation(e.target.value);
+              localStorage.setItem('supplysentry-location', e.target.value);
+              setCurrentPage(1);
+            }}
+            className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
+          >
+            {WORKSPACE_LOCATIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
         </div>
       </div>
 
