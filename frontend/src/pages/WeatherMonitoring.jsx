@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { CloudRain, MapPin, RefreshCcw, Thermometer, Wind } from 'lucide-react';
 import api from '@/services/api';
 import { Badge } from '@/components/ui/Badge';
@@ -16,7 +16,7 @@ import {
 } from '@/lib/locationWorkspace';
 
 function temperatureFromDescription(description) {
-  const match = String(description || '').match(/Temperature:\s*([^\s°]+)/i);
+  const match = String(description || '').match(/Temperature:\s*([-+]?\d+(?:\.\d+)?)\s*°?C/i);
   return match ? `${match[1]}°C` : 'Unavailable';
 }
 
@@ -25,19 +25,49 @@ function weatherText(state) {
   return title.replace(/^Weather:\s*/i, '').trim() || 'Weather data not collected yet';
 }
 
+async function fetchWeatherSnapshot() {
+  const [locationsRes, eventsRes, risksRes] = await Promise.all([
+    api.get('/locations/'),
+    api.get('/events/', { params: { days: 7 } }),
+    api.get('/risks/', { params: { days: 7 } }),
+  ]);
+  return {
+    locations: locationsRes.data || [],
+    events: eventsRes.data || [],
+    risks: risksRes.data || [],
+  };
+}
+
 export default function WeatherMonitoring() {
   const queryClient = useQueryClient();
   const [scope, setScope] = useState(() => normalizeWeatherScope(localStorage.getItem('supplysentry-weather-scope') || 'United States'));
+  const [refreshError, setRefreshError] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['weatherMonitoring', scope],
     queryFn: async () => {
-      const [locationsRes, eventsRes, risksRes] = await Promise.all([
-        api.get('/locations/'),
-        api.get('/events/', { params: { days: 7 } }),
-        api.get('/risks/', { params: { days: 7 } }),
-      ]);
-      return { locations: locationsRes.data || [], events: eventsRes.data || [], risks: risksRes.data || [] };
+      let snapshot = await fetchWeatherSnapshot();
+      const locations = getWeatherLocationsForScope(snapshot.locations, scope);
+
+      // Populate the cards on first use when a monitored city has no stored
+      // observation yet. Later refreshes are handled by the explicit button.
+      if (locations.length) {
+        const cityStates = buildWeatherCityStates(snapshot.locations, snapshot.events, snapshot.risks)
+          .filter((state) => locations.some((location) => location.id === state.location.id));
+        const missingWeather = cityStates.some((state) => !state.weatherEvent);
+
+        if (missingWeather) {
+          await refreshWeatherLocations(
+            locations,
+            (location) => api.post('/events/weather/store', null, {
+              params: { location },
+            }),
+          );
+          snapshot = await fetchWeatherSnapshot();
+        }
+      }
+
+      return snapshot;
     },
     staleTime: 30 * 1000,
   });
@@ -46,6 +76,7 @@ export default function WeatherMonitoring() {
     () => getWeatherLocationsForScope(data?.locations || [], scope),
     [data?.locations, scope],
   );
+
   const cityStates = useMemo(
     () => buildWeatherCityStates(data?.locations || [], data?.events || [], data?.risks || [])
       .filter((state) => locations.some((location) => location.id === state.location.id)),
@@ -55,13 +86,33 @@ export default function WeatherMonitoring() {
   const refresh = useMutation({
     mutationFn: () => refreshWeatherLocations(
       locations,
-      (location) => api.post(`/events/weather/store?location=${encodeURIComponent(location)}`),
+      (location) => api.post('/events/weather/store', null, {
+        params: { location },
+      }),
     ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['weatherMonitoring', scope] }),
+    onMutate: () => setRefreshError(''),
+    onSuccess: (results) => {
+      const succeeded = results.filter((result) => result.status === 'success');
+      const failed = results.filter((result) => result.status === 'error');
+
+      if (succeeded.length) {
+        queryClient.invalidateQueries({ queryKey: ['weatherMonitoring', scope] });
+      }
+
+      if (failed.length) {
+        setRefreshError(
+          `Weather could not be refreshed for ${failed.map((item) => item.location).join(', ')}.`,
+        );
+      }
+    },
+    onError: (error) => {
+      setRefreshError(error?.message || 'Unable to refresh weather.');
+    },
   });
 
   const changeScope = (value) => {
     setScope(value);
+    setRefreshError('');
     localStorage.setItem('supplysentry-weather-scope', value);
   };
 
@@ -94,10 +145,13 @@ export default function WeatherMonitoring() {
               onClick={() => refresh.mutate()}
             >
               <RefreshCcw className={`mr-2 h-4 w-4 ${refresh.isPending ? 'animate-spin' : ''}`} />
-              Refresh Weather
+              {refresh.isPending ? 'Refreshing…' : 'Refresh Weather'}
             </Button>
           </div>
         </div>
+        {refreshError && (
+          <p className="mt-3 text-xs text-destructive" role="alert">{refreshError}</p>
+        )}
       </header>
 
       {isLoading ? (
@@ -123,7 +177,9 @@ export default function WeatherMonitoring() {
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h2 className="text-base font-semibold">Location conditions</h2>
-                <p className="text-xs text-muted-foreground">Latest available observation for each monitored city.</p>
+                <p className="text-xs text-muted-foreground">
+                  Latest available temperature, condition and weather-risk status for each monitored city.
+                </p>
               </div>
               <Badge variant="outline">{locations.length} locations</Badge>
             </div>
@@ -157,16 +213,23 @@ function WeatherCard({ state }) {
         </div>
         <div className="flex items-center gap-2">
           <Thermometer className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xl font-semibold">{temperatureFromDescription(weatherEvent?.description)}</span>
+          <span className="text-xl font-semibold">
+            {temperatureFromDescription(weatherEvent?.description)}
+          </span>
         </div>
-        <p className="min-h-10 text-sm text-muted-foreground">{weatherText(state)}</p>
+        <p className="min-h-10 text-sm text-muted-foreground">
+          {weatherText(state)}
+        </p>
         <div className="flex flex-wrap items-center gap-2">
           {risk?.severity && <Badge variant={String(risk.severity).toLowerCase()}>{risk.severity}</Badge>}
           {risk?.risk_type && <Badge variant="outline">{risk.risk_type}</Badge>}
+          {!weatherEvent && <Badge variant="outline">No observation</Badge>}
         </div>
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <Wind className="h-3 w-3" />
-          {weatherEvent?.created_at ? new Date(weatherEvent.created_at).toLocaleString() : 'No observation yet'}
+          {weatherEvent?.event_time || weatherEvent?.created_at
+            ? new Date(weatherEvent.event_time || weatherEvent.created_at).toLocaleString()
+            : 'No observation yet'}
         </div>
       </CardContent>
     </Card>
