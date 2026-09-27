@@ -16,7 +16,7 @@ from app.ai.llm_provider import (
 )
 from app.api.deps import get_current_user
 from app.database.database import get_db
-from app.crud.risk_report import get_report, report_status, save_report
+from app.crud.risk_report import get_report, save_report
 from app.models.risk import Risk
 from app.models.risk_report import KIND_INVESTIGATION, KIND_RESPONSE_PLAN
 from app.models.user import User
@@ -78,7 +78,19 @@ def risk_report_status(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     _require_risk(db, risk_id)
-    return report_status(db, risk_id, current_user.id)
+    investigation = get_report(db, risk_id, current_user.id, KIND_INVESTIGATION)
+    response_plan = get_report(db, risk_id, current_user.id, KIND_RESPONSE_PLAN)
+    return RiskReportStatus(
+        risk_id=risk_id,
+        investigation_exists=bool(
+            investigation is not None
+            and not _is_legacy_investigation(investigation.payload)
+        ),
+        response_plan_exists=bool(
+            response_plan is not None
+            and not _is_legacy_response_plan(response_plan.payload)
+        ),
+    )
 
 
 @router.get("/risk/{risk_id}", response_model=InvestigationResponse)
@@ -198,7 +210,7 @@ def build_risk_response_plan(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Deterministic DEMO response-plan options for a previously investigated risk.
+    """Generate a risk-specific response plan for a previously investigated risk.
 
     Read-only with respect to intelligence data: reuses the Agent 1 read-only
     tools to load the risk, event, prediction, recommendation and company
