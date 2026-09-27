@@ -546,6 +546,7 @@ def _review_location(risk):
 
     if (
         "united states" in value
+        or value in {"us", "u.s.", "usa"}
         or "usa" in tokens
         or "u.s." in value
         or value.endswith(" us")
