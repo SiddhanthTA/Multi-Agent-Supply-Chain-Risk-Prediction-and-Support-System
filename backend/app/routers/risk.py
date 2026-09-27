@@ -28,6 +28,7 @@ from app.schemas.risk import (
 )
 
 from app.schemas.trends import RiskTrendResponse
+from app.services.review_content import is_review_risk
 from app.services.risk_trends import (
     ALLOWED_RANGES,
     DEFAULT_RANGE,
@@ -107,6 +108,7 @@ def _risk_item(risk, selection_reason: str | None = None) -> ReviewRiskItem:
 
 @router.get("/review-set", response_model=ReviewSetResponse)
 def read_review_set(
+    location: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -119,10 +121,24 @@ def read_review_set(
     from app.crud.risk import get_review_risks
 
     entries = get_review_risks(db)
+    selected = (location or "all").strip()
+
+    def matches(item):
+        value = str(item.location or "").strip()
+        if selected in ("", "all", "All Locations"):
+            return True
+        if selected == "Global":
+            return value == "" or value.lower() == "unknown" or value not in {"India", "United States"}
+        if selected == "India":
+            return value == "India" or value.endswith(", India") or value.endswith(",India")
+        if selected == "United States":
+            return value == "United States" or value.endswith(", United States") or value.endswith(",United States")
+        return value == selected
+
     items = [
         _risk_item(e.risk, e.selection_reason)
         for e in entries
-        if e.risk and not is_resolved(e.risk)
+        if e.risk and not is_resolved(e.risk) and matches(_risk_item(e.risk, e.selection_reason))
     ]
     counts = {"High": 0, "Medium": 0, "Low": 0}
     for item in items:
@@ -183,12 +199,13 @@ def delete_existing_risk(
 
 def _resolution_state(db: Session, risk, user_id: int) -> dict:
     kinds = get_report_kinds(db, risk.id, user_id)
+    curated = is_review_risk(risk.id)
     return {
         "risk_id": risk.id,
         "status": risk.status,
         "resolvable": is_risk_resolvable(db, risk, user_id),
-        "investigation_exists": KIND_INVESTIGATION in kinds,
-        "response_plan_exists": KIND_RESPONSE_PLAN in kinds,
+        "investigation_exists": curated or KIND_INVESTIGATION in kinds,
+        "response_plan_exists": curated or KIND_RESPONSE_PLAN in kinds,
         "resolved_at": risk.updated_at if is_resolved(risk) else None,
     }
 
