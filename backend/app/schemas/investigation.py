@@ -98,8 +98,8 @@ class ResponsePlanResponse(BaseModel):
     risk_id: int
     event_id: int
     scenario: str
-    generated_by: str = "deterministic-response-plan"
-    is_demo_template: bool = True
+    generated_by: str = "runtime-context-response-planner"
+    is_demo_template: bool = False
     company_context_available: bool
     company_name: str | None = None
     company_industry: str | None = None
