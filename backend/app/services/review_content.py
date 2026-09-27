@@ -435,11 +435,11 @@ SCENARIOS.update({
 # ---------------------------------------------------------------------------
 # Dynamic presentation curation
 # ---------------------------------------------------------------------------
-# The presentation workspace is selected from the real stored event/risk
-# stream. This keeps the review set useful without inventing database rows.
-# The existing SCENARIOS above remain valid for older explicitly curated rows;
-# these functions provide a consistent fallback for additional high-quality
-# supply-chain signals.
+# The presentation workspace is selected from real stored Event/Risk rows.
+# Nothing is inserted into the database merely to reach the presentation
+# targets. The selector deliberately prefers supply-chain signals, but has a
+# second, lower-threshold pass so a sparse score bucket does not collapse to
+# only a handful of risks.
 
 DYNAMIC_REVIEW_RISK_IDS = set()
 _REVIEW_COUNTS = {"United States": 13, "India": 15, "Global": 22}
@@ -456,7 +456,7 @@ _REVIEW_DEPENDENCIES = {
     "Rail": ("rail", "railway"),
     "Cloud Services": ("cloud", "data center", "data centre"),
     "Telecom": ("telecom", "network outage", "communications"),
-    "North America": ("united states", "u.s.", "north america", "canada"),
+    "North America": ("united states", "u.s.", "usa", "north america", "canada"),
 }
 
 _REVIEW_SUPPLY_TERMS = (
@@ -472,22 +472,89 @@ _REVIEW_SUPPLY_TERMS = (
 
 _REVIEW_NOISE_TERMS = (
     "cricket", "football", "soccer", "cycling", "marathon", "olympic", "asian games",
-    "festival", "concert", "celebrity", "movie", "music", "garbage truck", "air defense",
-    "missile interception", "sports", "tournament", "match", "fashion", "entertainment",
-    "lottery", "horoscope",
+    "festival", "concert", "celebrity", "movie", "music", "garbage truck",
+    "air defense", "missile interception", "sports", "tournament", "match",
+    "fashion", "entertainment", "lottery", "horoscope",
 )
+
+# Location strings in the event stream are not guaranteed to use one format.
+# These aliases keep common city/state forms from being incorrectly pushed
+# into Global merely because the country was omitted.
+_INDIA_LOCATION_ALIASES = {
+    "india", "new delhi", "delhi", "mumbai", "bombay", "bengaluru", "bangalore",
+    "chennai", "madras", "hyderabad", "pune", "ahmedabad", "kolkata", "calcutta",
+    "kochi", "cochin", "coimbatore", "noida", "gurugram", "gurgaon", "jaipur",
+    "lucknow", "kanpur", "surat", "nagpur", "indore", "bhubaneswar",
+    "visakhapatnam", "thiruvananthapuram", "trivandrum", "vadodara", "mysuru",
+    "mysore", "chandigarh", "goa",
+}
+_US_STATE_ALIASES = {
+    "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+    "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
+    "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine",
+    "maryland", "massachusetts", "michigan", "minnesota", "mississippi",
+    "missouri", "montana", "nebraska", "nevada", "new hampshire", "new jersey",
+    "new mexico", "new york", "north carolina", "north dakota", "ohio",
+    "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina",
+    "south dakota", "tennessee", "texas", "utah", "vermont", "virginia",
+    "washington", "west virginia", "wisconsin", "wyoming", "district of columbia",
+}
+_US_STATE_CODES = {
+    "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id",
+    "il", "in", "ia", "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms",
+    "mo", "mt", "ne", "nv", "nh", "nj", "nm", "ny", "nc", "nd", "oh", "ok",
+    "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", "vt", "va", "wa", "wv",
+    "wi", "wy", "dc",
+}
+_US_CITY_ALIASES = {
+    "new york", "los angeles", "chicago", "houston", "phoenix", "philadelphia",
+    "san antonio", "san diego", "dallas", "san jose", "austin", "jacksonville",
+    "fort worth", "columbus", "charlotte", "san francisco", "indianapolis",
+    "seattle", "denver", "washington", "boston", "nashville", "detroit",
+    "portland", "las vegas", "memphis", "louisville", "baltimore", "milwaukee",
+    "albuquerque", "tucson", "fresno", "sacramento", "atlanta", "kansas city",
+    "miami", "raleigh", "omaha", "minneapolis", "cleveland", "tulsa",
+    "new orleans", "tampa", "honolulu", "arlington", "pittsburgh", "st louis",
+    "st. louis", "cincinnati", "orlando", "irvine", "silicon valley",
+}
 
 def _review_text(risk):
     event = risk.event
-    return " ".join(str(getattr(event, field, "") or "") for field in ("title", "description", "category")).casefold()
+    return " ".join(
+        str(getattr(event, field, "") or "")
+        for field in ("title", "description", "category")
+    ).casefold()
+
+def _normalize_location_text(value):
+    text = str(value or "").strip().casefold()
+    for char in (",", "|", ";", "(", ")", "[", "]"):
+        text = text.replace(char, " ")
+    return " ".join(text.split())
 
 def _review_location(risk):
-    value = str(risk.event.location if risk.event else "").strip()
-    lower = value.casefold()
-    if lower in {"india", "india, india"} or lower.endswith(", india"):
+    value = _normalize_location_text(risk.event.location if risk.event else "")
+    if not value or value in {"unknown", "global", "world", "worldwide", "international"}:
+        return "Global"
+
+    tokens = set(value.replace("-", " ").split())
+    if (
+        "india" in tokens
+        or value.endswith(" india")
+        or any(alias == value or f"{alias} india" in value for alias in _INDIA_LOCATION_ALIASES)
+    ):
         return "India"
-    if lower in {"united states", "usa", "us"} or lower.endswith(", united states") or lower.endswith(", usa"):
+
+    if (
+        "united states" in value
+        or "usa" in tokens
+        or "u.s." in value
+        or value.endswith(" us")
+        or any(alias == value or f"{alias} " in value for alias in _US_STATE_ALIASES)
+        or any(f" {code}" in f" {value} " for code in _US_STATE_CODES)
+        or any(alias == value or alias in value for alias in _US_CITY_ALIASES)
+    ):
         return "United States"
+
     return "Global"
 
 def _review_dependency_matches(risk):
@@ -502,6 +569,8 @@ def _review_candidate_score(risk):
     text = _review_text(risk)
     if not risk.event or not risk.event.title:
         return -10_000
+    if risk.event.event_type == "Weather":
+        return -10_000
     if any(term in text for term in _REVIEW_NOISE_TERMS):
         return -10_000
 
@@ -514,7 +583,7 @@ def _review_candidate_score(risk):
     score += {"critical": 24, "high": 18, "medium": 10, "low": 4}.get(severity, 0)
 
     category = str(risk.event.category or "").casefold()
-    if any(term in category for term in ("supply", "logistics", "energy", "weather", "technology", "trade")):
+    if any(term in category for term in ("supply", "logistics", "energy", "technology", "trade")):
         score += 8
 
     created = risk.event.published_at or risk.event.event_time or risk.event.created_at
@@ -543,60 +612,75 @@ def _dedupe_review_candidates(rows):
     return result
 
 def presentation_risks(db):
-    """Return a balanced presentation set from real stored Risk/Event rows."""
+    """Return the balanced presentation set from real stored Risk/Event rows.
+
+    Selection is exact up to the requested regional targets whenever enough
+    eligible stored rows exist. The first pass prefers strong supply-chain
+    signals; the second pass fills any regional shortfall from the remaining
+    non-noise rows. This avoids the previous 5/4-result problem caused by an
+    overly strict score threshold.
+    """
     global DYNAMIC_REVIEW_RISK_IDS, CURATED_REVIEW_RISK_IDS
     all_rows = (
         db.query(Risk)
         .join(Risk.event)
         .filter(Risk.status != "Resolved")
         .order_by(Risk.created_at.desc())
-        .limit(800)
+        .limit(5000)
         .all()
     )
 
     buckets = {"United States": [], "India": [], "Global": []}
     for risk in _dedupe_review_candidates(all_rows):
-        location = _review_location(risk)
-        score = _review_candidate_score(risk)
-        if score < 18:
+        if not risk.event or not risk.event.title:
             continue
-        buckets[location].append((score, risk))
+        if risk.event.event_type == "Weather":
+            continue
+        score = _review_candidate_score(risk)
+        if score <= -10_000:
+            continue
+        buckets[_review_location(risk)].append((score, risk))
 
     selected = []
+    selected_ids = set()
+
     for location, target in _REVIEW_COUNTS.items():
         ranked = sorted(
             buckets[location],
-            key=lambda item: (item[0], float(item[1].risk_score or 0)),
+            key=lambda item: (
+                item[0],
+                float(item[1].risk_score or 0),
+                item[1].created_at or datetime.min,
+            ),
             reverse=True,
         )
-        selected.extend(risk for _, risk in ranked[:target])
+        # Strong pass: only signals that meet the normal quality bar.
+        chosen = [risk for score, risk in ranked if score >= 18][:target]
+        # Fill pass: if the bucket is sparse, use the strongest remaining
+        # non-noise stored signals in that same location instead of stealing
+        # rows from another location.
+        if len(chosen) < target:
+            chosen_ids = {risk.id for risk in chosen}
+            chosen.extend(
+                risk for _, risk in ranked
+                if risk.id not in chosen_ids
+            )
+            chosen = chosen[:target]
 
-    # If a bucket is short because its current stream is sparse, fill it with
-    # the strongest remaining supply-chain signals rather than displaying weak
-    # unrelated content.
-    selected_ids = {risk.id for risk in selected}
-    if len(selected) < sum(_REVIEW_COUNTS.values()):
-        remaining = sorted(
-            [
-                (score, risk)
-                for bucket in buckets.values()
-                for score, risk in bucket
-                if risk.id not in selected_ids
-            ],
-            key=lambda item: (item[0], float(item[1].risk_score or 0)),
-            reverse=True,
-        )
-        for _, risk in remaining:
-            if len(selected) >= sum(_REVIEW_COUNTS.values()):
-                break
-            selected.append(risk)
-            selected_ids.add(risk.id)
+        selected.extend(chosen)
+        selected_ids.update(risk.id for risk in chosen)
 
     DYNAMIC_REVIEW_RISK_IDS = selected_ids
     CURATED_REVIEW_RISK_IDS = set(selected_ids)
-    CURATED_US_RISK_IDS = {r.id for r in selected if _review_location(r) == "United States"}
-    CURATED_INDIA_RISK_IDS = {r.id for r in selected if _review_location(r) == "India"}
-    CURATED_GLOBAL_RISK_IDS = {r.id for r in selected if _review_location(r) == "Global"}
+    CURATED_US_RISK_IDS = {
+        risk.id for risk in selected if _review_location(risk) == "United States"
+    }
+    CURATED_INDIA_RISK_IDS = {
+        risk.id for risk in selected if _review_location(risk) == "India"
+    }
+    CURATED_GLOBAL_RISK_IDS = {
+        risk.id for risk in selected if _review_location(risk) == "Global"
+    }
     return selected
 
 def presentation_location(risk):
@@ -733,7 +817,7 @@ def build_review_impact(risk, event, company_name="Test Electronics", industry="
         "risk": {"id": risk.id, "severity": risk.severity, "risk_type": risk.risk_type or risk.risk_name, "risk_score": risk.risk_score, "status": risk.status, "created_at": risk.created_at.isoformat() if risk.created_at else None, "prediction": None},
         "event": {"id": event.id, "title": event.title, "description": event.description, "category": event.category, "event_type": event.event_type, "location": event.location, "source": event.source},
         "relevance": "direct" if _review_dependency_matches(risk) else "indirect",
-        "relevance_reason": f"Review mapping based on configured Test Electronics dependencies.",
+        "relevance_reason": "Review mapping based on configured Test Electronics dependencies.",
         "summary": f"Potential exposure areas are mapped from the stored event and configured company dependencies. This does not claim that {company_name} has experienced these impacts.",
         "mappings": mappings,
         "data_limitations": DATA_LIMITATIONS,
@@ -767,7 +851,10 @@ def build_review_response_plan(risk, event, company_name="Test Electronics", ind
             "Check whether the event is persistent, worsening or already reversing.",
             "Confirm whether a qualified alternative exists before changing commitments.",
         ],
-        "response_options": [{"name": name, "what_to_check": checks, "why": why, "information_required": checks} for name, why, checks in options],
+        "response_options": [
+            {"name": name, "what_to_check": checks, "why": why, "information_required": checks}
+            for name, why, checks in options
+        ],
         "information_required": [item for _, _, checks in options for item in checks][:8],
         "escalation_conditions": [
             "Internal data confirms material exposure to the event.",
@@ -776,7 +863,10 @@ def build_review_response_plan(risk, event, company_name="Test Electronics", ind
         ],
         "responsible_areas": ["Procurement", "Operations", "Logistics", "Finance"],
         "platform_recommendation": None,
-        "notes": ["Prepared from the stored event, risk assessment and company profile.", "Options are for human review; no automated business action is taken."],
+        "notes": [
+            "Prepared from the stored event, risk assessment and company profile.",
+            "Options are for human review; no automated business action is taken.",
+        ],
         "decision_support_only": True,
     }
 
@@ -786,21 +876,39 @@ def build_review_correlations(db, risk_id):
     target = db.query(Risk).filter(Risk.id == risk_id).first()
     if target is None or target.event is None:
         return None
-    candidates = [risk for risk in presentation_risks(db) if risk.id != risk_id and risk.event is not None]
+
+    candidates = [
+        risk for risk in presentation_risks(db)
+        if risk.id != risk_id and risk.event is not None
+    ]
     target_deps = set(_review_dependency_matches(target))
     target_tokens = set((target.event.title or "").casefold().split())
     rows = []
+
     for candidate in candidates:
         deps = set(_review_dependency_matches(candidate))
         shared = target_deps & deps
-        same_type = str(target.risk_type or "").casefold() == str(candidate.risk_type or "").casefold()
-        same_category = str(target.event.category or "").casefold() == str(candidate.event.category or "").casefold()
-        score = len(shared) * 30 + (20 if same_type and target.risk_type else 0) + (15 if same_category else 0)
+        same_type = (
+            str(target.risk_type or "").casefold()
+            == str(candidate.risk_type or "").casefold()
+        )
+        same_category = (
+            str(target.event.category or "").casefold()
+            == str(candidate.event.category or "").casefold()
+        )
+        score = (
+            len(shared) * 30
+            + (20 if same_type and target.risk_type else 0)
+            + (15 if same_category else 0)
+        )
         candidate_tokens = set((candidate.event.title or "").casefold().split())
         overlap = len(target_tokens & candidate_tokens)
         if overlap:
             score += min(20, overlap * 5)
-        if score < 35:
+
+        # A lower threshold is used only for presentation coverage. The
+        # reasons still explicitly describe similarity, never causation.
+        if score < 20:
             continue
         score = min(95, score)
         reasons = []
@@ -813,7 +921,11 @@ def build_review_correlations(db, risk_id):
         if overlap:
             reasons.append("Their event titles share substantive supply-chain terms.")
         rows.append((score, candidate, reasons))
-    rows.sort(key=lambda item: (item[0], float(item[1].risk_score or 0)), reverse=True)
+
+    rows.sort(
+        key=lambda item: (item[0], float(item[1].risk_score or 0)),
+        reverse=True,
+    )
     result = []
     for score, related, reasons in rows[:5]:
         result.append({
@@ -828,16 +940,19 @@ def build_review_correlations(db, risk_id):
             "relationship_level": "high" if score >= 75 else "moderate",
             "relationship_label": "Strong relationship" if score >= 75 else "Meaningful similarity",
             "reasons": reasons,
-            "shared_company_dependencies": sorted(target_deps & set(_review_dependency_matches(related))),
+            "shared_company_dependencies": sorted(
+                target_deps & set(_review_dependency_matches(related))
+            ),
             "days_apart": None,
         })
+
     return {
         "risk_id": risk_id,
         "event_id": target.event.id,
         "correlations": result,
         "total_candidates_considered": len(candidates),
         "analysis_window_days": 7,
-        "message": None if result else "No strongly related review signals identified.",
+        "message": None if result else "No sufficiently similar review signals identified.",
         "disclaimer": "Correlation scores describe similarity between selected SupplySentry signals; they do not establish causation.",
         "company_context_available": True,
     }
