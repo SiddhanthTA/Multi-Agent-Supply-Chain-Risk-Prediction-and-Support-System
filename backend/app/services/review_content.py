@@ -343,7 +343,7 @@ def presentation_risks(db):
     """Return real stored Risk rows selected for the presentation workspace."""
     rows = db.query(Risk).filter(Risk.id.in_(CURATED_REVIEW_RISK_IDS)).all()
     by_id = {row.id: row for row in rows}
-    return [by_id[rid] for rid in CURATED_REVIEW_RISK_IDS if rid in by_id]
+    return [by_id[rid] for rid in sorted(CURATED_REVIEW_RISK_IDS) if rid in by_id]
 
 # Research-backed India/global scenarios. The underlying Risk/Event remains the
 # source of identity; these entries provide presentation-specific interpretation.
