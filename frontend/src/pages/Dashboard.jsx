@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -13,22 +13,13 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
-import {
-  buildWeatherCityStates,
-  filterEventsByWorkspace,
-  getWeatherLocationsForScope,
-  matchesWorkspaceLocation,
-  normalizeWorkspaceLocation,
-  refreshWeatherLocations,
-  WORKSPACE_LOCATIONS,
-} from '@/lib/locationWorkspace';
+import { normalizeWorkspaceLocation, WORKSPACE_LOCATIONS } from '@/lib/locationWorkspace';
 import { recentParams } from '@/lib/riskReports';
 
 const fetchDashboardData = async (selectedLocation) => {
-  const [reviewEventsRes, reviewRisksRes, weatherEventsRes, locationsRes, companyRes] = await Promise.all([
+  const [reviewEventsRes, reviewRisksRes, locationsRes] = await Promise.all([
     api.get('/events/review-set', { params: { location: selectedLocation } }),
     api.get('/risks/review-set', { params: { location: selectedLocation } }),
-    api.get('/events/', { params: recentParams() }),
     api.get('/locations/'),
   ]);
   return {
@@ -108,7 +99,6 @@ export default function Dashboard() {
   };
 
   if (isError) return <WorkspaceMessage title="Dashboard unavailable" message={error.message} />;
-  const weatherRefreshSummary = weatherMutation.data || [];
 
   return (
     <div className="ss-page ss-enter space-y-5 pb-10">
