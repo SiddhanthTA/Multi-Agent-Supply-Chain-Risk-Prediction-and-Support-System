@@ -117,7 +117,10 @@ def test_financial_scenario_is_supported():
 
 
 def test_generic_fallback_for_unrelated_event():
-    result = plan(event=event("City festival opens", "A festival began today.", "General"))
+    result = plan(
+        event=event("City festival opens", "A festival began today.", "General"),
+        company_relevance={"relevance": "no_identified_relevance", "matched_dependencies": []},
+    )
 
     assert result["scenario"] in {"general", "financial_market"}
     assert result["response_objective"]
