@@ -164,31 +164,3 @@ def delete_existing_event(
 
 
 # --------------------------------------------------
-# LIVE DATA COLLECTION
-# --------------------------------------------------
-
-@router.post("/news/store")
-def collect_news(
-    db: Session = Depends(get_db)
-):
-    """
-    Fetch, normalize and store live NewsAPI events.
-    """
-    return store_news_events(db)
-
-
-@router.post("/weather/store")
-def collect_weather(
-    location: str = None,
-    db: Session = Depends(get_db)
-):
-    """
-    Fetch, normalize and store live WeatherAPI event.
-    """
-    result = store_weather_event(db, location=location)
-    if isinstance(result, dict) and result.get("status") == "error":
-        raise HTTPException(
-            status_code=502,
-            detail=result.get("message") or "Unable to fetch weather right now."
-        )
-    return result
