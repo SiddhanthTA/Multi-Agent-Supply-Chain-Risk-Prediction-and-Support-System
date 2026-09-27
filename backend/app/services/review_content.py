@@ -430,3 +430,414 @@ SCENARIOS.update({
 },
 })
 
+
+
+# ---------------------------------------------------------------------------
+# Dynamic presentation curation
+# ---------------------------------------------------------------------------
+# The presentation workspace is selected from the real stored event/risk
+# stream. This keeps the review set useful without inventing database rows.
+# The existing SCENARIOS above remain valid for older explicitly curated rows;
+# these functions provide a consistent fallback for additional high-quality
+# supply-chain signals.
+
+DYNAMIC_REVIEW_RISK_IDS = set()
+_REVIEW_COUNTS = {"United States": 13, "India": 15, "Global": 22}
+
+_REVIEW_DEPENDENCIES = {
+    "Semiconductors": ("semiconductor", "semiconductors", "chip", "chips", "wafer", "foundry", "memory"),
+    "Batteries": ("battery", "batteries", "cell", "cells", "cathode", "anode"),
+    "Lithium": ("lithium",),
+    "Diesel": ("diesel", "fuel", "refinery", "refined products"),
+    "Electricity": ("electricity", "power grid", "grid", "power generation", "utility"),
+    "Coal": ("coal",),
+    "Ports": ("port", "ports", "shipping", "vessel", "container", "freight", "maritime"),
+    "Road": ("road", "truck", "trucking", "highway"),
+    "Rail": ("rail", "railway"),
+    "Cloud Services": ("cloud", "data center", "data centre"),
+    "Telecom": ("telecom", "network outage", "communications"),
+    "North America": ("united states", "u.s.", "north america", "canada"),
+}
+
+_REVIEW_SUPPLY_TERMS = (
+    "supply chain", "supplier", "sourcing", "shortage", "bottleneck", "capacity",
+    "production", "manufacturing", "factory", "plant", "shipment", "shipping",
+    "freight", "port", "rail", "truck", "logistics", "export", "import", "tariff",
+    "sanction", "trade", "refinery", "fuel", "diesel", "oil", "crude", "gas",
+    "electricity", "power", "coal", "semiconductor", "chip", "battery", "lithium",
+    "nickel", "cobalt", "rare earth", "mineral", "weather", "flood", "storm",
+    "hurricane", "earthquake", "drought", "cyberattack", "cyber", "outage",
+    "congestion", "rerouting", "blockade", "embargo", "energy",
+)
+
+_REVIEW_NOISE_TERMS = (
+    "cricket", "football", "soccer", "cycling", "marathon", "olympic", "asian games",
+    "festival", "concert", "celebrity", "movie", "music", "garbage truck", "air defense",
+    "missile interception", "sports", "tournament", "match", "fashion", "entertainment",
+    "lottery", "horoscope",
+)
+
+def _review_text(risk):
+    event = risk.event
+    return " ".join(str(getattr(event, field, "") or "") for field in ("title", "description", "category")).casefold()
+
+def _review_location(risk):
+    value = str(risk.event.location if risk.event else "").strip()
+    lower = value.casefold()
+    if lower in {"india", "india, india"} or lower.endswith(", india"):
+        return "India"
+    if lower in {"united states", "usa", "us"} or lower.endswith(", united states") or lower.endswith(", usa"):
+        return "United States"
+    return "Global"
+
+def _review_dependency_matches(risk):
+    text = _review_text(risk)
+    matches = []
+    for dependency, terms in _REVIEW_DEPENDENCIES.items():
+        if any(term in text for term in terms):
+            matches.append(dependency)
+    return matches
+
+def _review_candidate_score(risk):
+    text = _review_text(risk)
+    if not risk.event or not risk.event.title:
+        return -10_000
+    if any(term in text for term in _REVIEW_NOISE_TERMS):
+        return -10_000
+
+    score = 0
+    dependencies = _review_dependency_matches(risk)
+    score += min(len(dependencies), 4) * 22
+    score += min(sum(text.count(term) for term in _REVIEW_SUPPLY_TERMS), 8) * 4
+
+    severity = str(risk.severity or "").casefold()
+    score += {"critical": 24, "high": 18, "medium": 10, "low": 4}.get(severity, 0)
+
+    category = str(risk.event.category or "").casefold()
+    if any(term in category for term in ("supply", "logistics", "energy", "weather", "technology", "trade")):
+        score += 8
+
+    created = risk.event.published_at or risk.event.event_time or risk.event.created_at
+    if created:
+        age_days = max(0, (datetime.now(timezone.utc) - (
+            created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
+        )).total_seconds() / 86400)
+        if age_days <= 7:
+            score += 12
+        elif age_days <= 14:
+            score += 6
+        elif age_days > 45:
+            score -= 12
+
+    return score
+
+def _dedupe_review_candidates(rows):
+    seen = set()
+    result = []
+    for risk in rows:
+        title = " ".join((risk.event.title or "").casefold().split())
+        if title in seen:
+            continue
+        seen.add(title)
+        result.append(risk)
+    return result
+
+def presentation_risks(db):
+    """Return a balanced presentation set from real stored Risk/Event rows."""
+    global DYNAMIC_REVIEW_RISK_IDS, CURATED_REVIEW_RISK_IDS
+    all_rows = (
+        db.query(Risk)
+        .join(Risk.event)
+        .filter(Risk.status != "Resolved")
+        .order_by(Risk.created_at.desc())
+        .limit(800)
+        .all()
+    )
+
+    buckets = {"United States": [], "India": [], "Global": []}
+    for risk in _dedupe_review_candidates(all_rows):
+        location = _review_location(risk)
+        score = _review_candidate_score(risk)
+        if score < 18:
+            continue
+        buckets[location].append((score, risk))
+
+    selected = []
+    for location, target in _REVIEW_COUNTS.items():
+        ranked = sorted(
+            buckets[location],
+            key=lambda item: (item[0], float(item[1].risk_score or 0)),
+            reverse=True,
+        )
+        selected.extend(risk for _, risk in ranked[:target])
+
+    # If a bucket is short because its current stream is sparse, fill it with
+    # the strongest remaining supply-chain signals rather than displaying weak
+    # unrelated content.
+    selected_ids = {risk.id for risk in selected}
+    if len(selected) < sum(_REVIEW_COUNTS.values()):
+        remaining = sorted(
+            [
+                (score, risk)
+                for bucket in buckets.values()
+                for score, risk in bucket
+                if risk.id not in selected_ids
+            ],
+            key=lambda item: (item[0], float(item[1].risk_score or 0)),
+            reverse=True,
+        )
+        for _, risk in remaining:
+            if len(selected) >= sum(_REVIEW_COUNTS.values()):
+                break
+            selected.append(risk)
+            selected_ids.add(risk.id)
+
+    DYNAMIC_REVIEW_RISK_IDS = selected_ids
+    CURATED_REVIEW_RISK_IDS = set(selected_ids)
+    CURATED_US_RISK_IDS = {r.id for r in selected if _review_location(r) == "United States"}
+    CURATED_INDIA_RISK_IDS = {r.id for r in selected if _review_location(r) == "India"}
+    CURATED_GLOBAL_RISK_IDS = {r.id for r in selected if _review_location(r) == "Global"}
+    return selected
+
+def presentation_location(risk):
+    if risk.id in DYNAMIC_REVIEW_RISK_IDS:
+        return _review_location(risk)
+    return risk.event.location if risk.event else None
+
+def is_review_risk(risk_id: int) -> bool:
+    return int(risk_id) in DYNAMIC_REVIEW_RISK_IDS
+
+def curated_review_risk_ids():
+    return DYNAMIC_REVIEW_RISK_IDS
+
+def _generic_review_subject(risk, event):
+    deps = _review_dependency_matches(risk)
+    if deps:
+        return ", ".join(deps[:3])
+    if event.category:
+        return str(event.category)
+    return str(risk.risk_type or risk.risk_name or "the monitored supply-chain signal")
+
+def _generic_review_sections(risk, event, company_name, industry):
+    subject = _generic_review_subject(risk, event)
+    deps = _review_dependency_matches(risk)
+    dep_text = ", ".join(deps) if deps else subject
+    title = event.title or "Stored event signal"
+    summary = (
+        f"{title} is a {risk.severity or 'unrated'} {risk.risk_type or risk.risk_name or 'supply-chain'} "
+        f"signal in {presentation_location(risk) or event.location or 'the monitored network'}. "
+        f"The strongest configured company-relevant areas are {dep_text}. "
+        f"The stored event does not by itself establish a loss or disruption at {company_name}."
+    )
+    why = (
+        f"For {company_name}, the relevant review question is whether the external signal changes "
+        f"availability, cost, lead time, routing, supplier capacity or demand for {dep_text}. "
+        f"SupplySentry does not store supplier contracts, purchase volumes, inventory cover, shipment "
+        f"volumes or customer commitments, so exposure must be verified internally."
+    )
+    next_steps = [
+        f"Map current {dep_text} suppliers, routes or operating dependencies against the event.",
+        f"Check open orders, inventory cover and committed production or delivery dates exposed to {dep_text}.",
+        "Track the source event for persistence, escalation or reversal before changing supply-chain plans.",
+    ]
+    sections = {
+        "investigation_summary": [_statement(summary, "E1", title, "fact")],
+        "why_this_matters": [
+            _statement(why, "E1", title),
+            _statement(
+                f"{company_name}'s quantitative exposure remains unknown because internal contracts, volumes and inventory data are not stored.",
+                "E3",
+                f"{company_name} / {industry}",
+            ),
+        ],
+        "supporting_evidence": [
+            _statement(
+                f"Stored assessment: {risk.severity or 'Unrated'} severity, {risk.risk_type or risk.risk_name or 'Unspecified'} risk type, risk score {float(risk.risk_score or 0):.2f}.",
+                "E2",
+                f"{risk.severity} / {risk.risk_type or risk.risk_name}",
+            ),
+            _statement(
+                f"Stored event location: {event.location or 'not specified'}; source: {event.source or 'not specified'}.",
+                "E1",
+                title,
+            ),
+        ],
+        "related_intelligence": [],
+        "what_to_investigate_next": [_statement(item, "E1", title) for item in next_steps],
+    }
+    return sections, deps, subject
+
+def build_review_investigation(risk, event, company_name="Test Electronics", industry="Consumer Electronics"):
+    if not is_review_risk(risk.id):
+        return None
+    sections, deps, subject = _generic_review_sections(risk, event, company_name, industry)
+    return {
+        "investigation_id": f"review-{risk.id}",
+        "target": {"risk_id": risk.id, "event_id": event.id},
+        "generated_at": datetime.now(timezone.utc),
+        "model": {"provider": "curated-review", "name": "SupplySentry Review Content", "quantization": None},
+        "sections": sections,
+        "evidence": [
+            {"ref": "E1", "evidence_type": "event", "label": "Stored event", "data": {"id": event.id, "title": event.title, "location": event.location, "category": event.category, "source": event.source}},
+            {"ref": "E2", "evidence_type": "risk", "label": "Stored risk assessment", "data": {"id": risk.id, "severity": risk.severity, "risk_type": risk.risk_type, "risk_score": risk.risk_score}},
+            {"ref": "E3", "evidence_type": "company_context", "label": "Company profile", "data": {"company_name": company_name, "industry": industry, "dependencies": deps}},
+        ],
+        "warnings": ["Curated review content is grounded in the stored event and risk record and is decision support only."],
+        "decision_support_only": True,
+    }
+
+def build_review_impact(risk, event, company_name="Test Electronics", industry="Consumer Electronics"):
+    if not is_review_risk(risk.id):
+        return None
+    deps = _review_dependency_matches(risk) or [risk.risk_type or risk.risk_name or "Supply-chain activity"]
+    mappings = []
+    for dependency in deps[:4]:
+        area = {
+            "Semiconductors": "Procurement, Supplier Qualification, Electronics Production",
+            "Batteries": "Procurement, Product Engineering, Manufacturing",
+            "Lithium": "Materials Procurement, Supplier Management, Manufacturing",
+            "Diesel": "Transportation, Logistics, Distribution",
+            "Electricity": "Facilities, Manufacturing, Operations",
+            "Coal": "Energy-Intensive Supplier Network, Operations",
+            "Ports": "International Logistics, Import/Export, Transportation",
+            "Road": "Distribution, Transportation, Last Mile",
+            "Rail": "Inbound Logistics, Transportation",
+            "Cloud Services": "Technology Operations, Digital Supply Chain",
+            "Telecom": "Technology Operations, Communications",
+            "North America": "Regional Sourcing, Logistics Planning",
+        }.get(dependency, "Procurement, Operations, Risk Management")
+        impacts = (
+            f"Potential change in {dependency.lower()} availability, cost, lead time or continuity "
+            "depending on the company's actual exposure."
+        )
+        checks = (
+            f"Current {dependency} supplier or route exposure; open commitments; inventory or capacity "
+            "cover; qualified alternatives."
+        )
+        mappings.append({
+            "dependency": dependency,
+            "category": "company_dependency",
+            "relevance": "direct" if dependency in deps else "indirect",
+            "matched_terms": [dependency],
+            "matched_on": "stored event content and configured company dependency",
+            "supply_chain_areas": [x.strip() for x in area.split(",")],
+            "potential_impacts": [impacts],
+            "verification_checks": [checks],
+        })
+    return {
+        "risk_id": risk.id,
+        "event_id": event.id,
+        "company_available": True,
+        "company_name": company_name,
+        "industry": industry,
+        "risk": {"id": risk.id, "severity": risk.severity, "risk_type": risk.risk_type or risk.risk_name, "risk_score": risk.risk_score, "status": risk.status, "created_at": risk.created_at.isoformat() if risk.created_at else None, "prediction": None},
+        "event": {"id": event.id, "title": event.title, "description": event.description, "category": event.category, "event_type": event.event_type, "location": event.location, "source": event.source},
+        "relevance": "direct" if _review_dependency_matches(risk) else "indirect",
+        "relevance_reason": f"Review mapping based on configured Test Electronics dependencies.",
+        "summary": f"Potential exposure areas are mapped from the stored event and configured company dependencies. This does not claim that {company_name} has experienced these impacts.",
+        "mappings": mappings,
+        "data_limitations": DATA_LIMITATIONS,
+    }
+
+def build_review_response_plan(risk, event, company_name="Test Electronics", industry="Consumer Electronics"):
+    if not is_review_risk(risk.id):
+        return None
+    deps = _review_dependency_matches(risk)
+    subject = _generic_review_subject(risk, event)
+    scenario = "materials_and_supply" if any(x in {"Semiconductors", "Batteries", "Lithium"} for x in deps) else (
+        "fuel_and_energy" if any(x in {"Diesel", "Electricity", "Coal"} for x in deps) else (
+            "logistics_and_transport" if any(x in {"Ports", "Road", "Rail"} for x in deps) else "general"
+        )
+    )
+    options = [
+        ("Option 1: Monitor and Verify", f"Verify the current {subject} exposure before changing plans.", ["Current internal exposure", "Current source status", "Supplier/route commitments"]),
+        ("Option 2: Reduce Near-Term Exposure", f"Review feasible sourcing, routing, timing or inventory actions affecting {subject}.", ["Alternative suppliers or routes", "Inventory cover", "Critical delivery commitments"]),
+        ("Option 3: Escalate for Review", f"Escalate if verified {subject} exposure is business-critical and alternatives are limited.", ["Exposure magnitude", "Business criticality", "Alternative capacity"]),
+    ]
+    return {
+        "risk_id": risk.id, "event_id": event.id, "scenario": scenario,
+        "generated_by": "curated-review", "is_demo_template": False,
+        "company_context_available": True, "company_name": company_name, "company_industry": industry,
+        "company_relevance": "direct" if deps else "indirect",
+        "matched_dependencies": deps,
+        "risk_summary": f"{event.title or 'Stored event'} is being reviewed for its potential effect on {subject}.",
+        "response_objective": f"Determine whether the event creates a verified supply-chain exposure for {company_name} and identify proportionate response options.",
+        "immediate_checks": [
+            f"Verify current {subject} exposure against internal suppliers, routes, contracts and inventory.",
+            "Check whether the event is persistent, worsening or already reversing.",
+            "Confirm whether a qualified alternative exists before changing commitments.",
+        ],
+        "response_options": [{"name": name, "what_to_check": checks, "why": why, "information_required": checks} for name, why, checks in options],
+        "information_required": [item for _, _, checks in options for item in checks][:8],
+        "escalation_conditions": [
+            "Internal data confirms material exposure to the event.",
+            "The affected activity is business-critical and practical alternatives are limited.",
+            "The signal persists or worsens across subsequent monitoring cycles.",
+        ],
+        "responsible_areas": ["Procurement", "Operations", "Logistics", "Finance"],
+        "platform_recommendation": None,
+        "notes": ["Prepared from the stored event, risk assessment and company profile.", "Options are for human review; no automated business action is taken."],
+        "decision_support_only": True,
+    }
+
+def build_review_correlations(db, risk_id):
+    if risk_id not in DYNAMIC_REVIEW_RISK_IDS:
+        return None
+    target = db.query(Risk).filter(Risk.id == risk_id).first()
+    if target is None or target.event is None:
+        return None
+    candidates = [risk for risk in presentation_risks(db) if risk.id != risk_id and risk.event is not None]
+    target_deps = set(_review_dependency_matches(target))
+    target_tokens = set((target.event.title or "").casefold().split())
+    rows = []
+    for candidate in candidates:
+        deps = set(_review_dependency_matches(candidate))
+        shared = target_deps & deps
+        same_type = str(target.risk_type or "").casefold() == str(candidate.risk_type or "").casefold()
+        same_category = str(target.event.category or "").casefold() == str(candidate.event.category or "").casefold()
+        score = len(shared) * 30 + (20 if same_type and target.risk_type else 0) + (15 if same_category else 0)
+        candidate_tokens = set((candidate.event.title or "").casefold().split())
+        overlap = len(target_tokens & candidate_tokens)
+        if overlap:
+            score += min(20, overlap * 5)
+        if score < 35:
+            continue
+        score = min(95, score)
+        reasons = []
+        if shared:
+            reasons.append(f"Shared configured dependency: {', '.join(sorted(shared))}.")
+        if same_type and target.risk_type:
+            reasons.append(f"Both are classified as {target.risk_type}.")
+        if same_category:
+            reasons.append(f"Both are in the {target.event.category} event category.")
+        if overlap:
+            reasons.append("Their event titles share substantive supply-chain terms.")
+        rows.append((score, candidate, reasons))
+    rows.sort(key=lambda item: (item[0], float(item[1].risk_score or 0)), reverse=True)
+    result = []
+    for score, related, reasons in rows[:5]:
+        result.append({
+            "risk_id": related.id,
+            "event_id": related.event.id,
+            "event_title": related.event.title or related.risk_name,
+            "severity": related.severity,
+            "risk_type": related.risk_type or related.risk_name,
+            "location": related.event.location,
+            "event_category": related.event.category,
+            "correlation_score": score,
+            "relationship_level": "high" if score >= 75 else "moderate",
+            "relationship_label": "Strong relationship" if score >= 75 else "Meaningful similarity",
+            "reasons": reasons,
+            "shared_company_dependencies": sorted(target_deps & set(_review_dependency_matches(related))),
+            "days_apart": None,
+        })
+    return {
+        "risk_id": risk_id,
+        "event_id": target.event.id,
+        "correlations": result,
+        "total_candidates_considered": len(candidates),
+        "analysis_window_days": 7,
+        "message": None if result else "No strongly related review signals identified.",
+        "disclaimer": "Correlation scores describe similarity between selected SupplySentry signals; they do not establish causation.",
+        "company_context_available": True,
+    }
