@@ -17,7 +17,6 @@ import {
 } from '@/components/ui/Table';
 import { Search, X, ChevronLeft, ChevronRight, ShieldAlert, Calendar, AlertTriangle, RefreshCw, AlertCircle, BarChart3 } from 'lucide-react';
 import { format } from 'date-fns';
-import { recentParams } from '@/lib/riskReports';
 import { WORKSPACE_LOCATIONS, normalizeWorkspaceLocation } from '@/lib/locationWorkspace';
 
 const fetchRisks = async (location) => {
