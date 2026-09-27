@@ -18,7 +18,7 @@ function observationTime(event) {
   return event?.event_time || event?.received_at || event?.created_at || null;
 }
 
-export default function WeatherRiskMap({ cityStates = [] }) {
+export default function WeatherRiskMap({ cityStates = [], country = 'Global' }) {
   const grouped = cityStates.reduce((result, state) => {
     const country = String(state.location?.country || 'Unknown');
     (result[country] ||= []).push(state);
@@ -35,7 +35,12 @@ export default function WeatherRiskMap({ cityStates = [] }) {
         ))}
       </div>
       <div className="h-[360px] w-full overflow-hidden rounded-lg border border-border">
-        <MapContainer center={[24, -20]} zoom={2} scrollWheelZoom={false} className="h-full w-full">
+        <MapContainer
+          center={country === 'India' ? [22.5, 79] : country === 'United States' ? [39, -98] : [24, -20]}
+          zoom={country === 'India' ? 4.2 : country === 'United States' ? 3.5 : 2}
+          scrollWheelZoom={false}
+          className="h-full w-full"
+        >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
