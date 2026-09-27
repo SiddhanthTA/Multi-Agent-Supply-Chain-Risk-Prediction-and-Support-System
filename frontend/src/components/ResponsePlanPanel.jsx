@@ -73,7 +73,7 @@ export default function ResponsePlanPanel({ riskId, investigationReady }) {
     <Card className="border-green-500/20">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <ClipboardList className="h-5 w-5 text-green-600" /> AI Response Recommendation
+          <ClipboardList className="h-5 w-5 text-green-600" /> Generated Response Plan
         </CardTitle>
         <CardDescription>
           Generated from this risk's event, assessment, company context, and available platform intelligence.
