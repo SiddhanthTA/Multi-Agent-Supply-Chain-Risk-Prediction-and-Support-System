@@ -130,7 +130,10 @@ export default function Dashboard() {
     }
   }, [weatherEnabled, weatherLocationId, weatherLocations]);
 
-  const selectedWeather = weatherStates.find((state) => state.location.id === weatherLocationId) || null;
+  const selectedWeatherState = weatherStates.find((state) => state.location.id === weatherLocationId) || null;
+  const selectedWeather = selectedWeatherState || (weatherLocations.find((location) => location.id === weatherLocationId)
+    ? { location: weatherLocations.find((location) => location.id === weatherLocationId), weatherEvent: null, risk: null }
+    : null);
 
   const weatherRefresh = useMutation({
     mutationFn: async () => {
@@ -202,7 +205,12 @@ export default function Dashboard() {
 
       {weatherEnabled && (
         <DashboardWeatherCard
-          states={weatherStates}
+          states={weatherLocations.map((location) => weatherStates.find((state) => state.location.id === location.id) || {
+            location,
+            canonicalLocation: `${location.name}, ${location.country}`,
+            weatherEvent: null,
+            risk: null,
+          })}
           selected={selectedWeather}
           locationId={weatherLocationId}
           onLocationChange={setWeatherLocationId}
