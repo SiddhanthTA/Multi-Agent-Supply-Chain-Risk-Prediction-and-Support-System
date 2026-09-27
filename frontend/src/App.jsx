@@ -59,7 +59,6 @@ function App() {
         
         <Route path="health" element={<SystemHealth />} />
         <Route path="company-profile" element={<CompanyProfilePage />} />
-        <Route path="weather" element={<WeatherMonitoring />} />
         <Route path="profile" element={<Profile />} />
         
           {/* Fallback route */}
