@@ -84,7 +84,6 @@ def read_resolved_risks(
     current_user: User = Depends(get_current_user),
 ):
     """Risks that have completed the investigate/plan/resolve lifecycle."""
-    rows = get_risks(db)
     return [_risk_item(risk) for risk in presentation_risks(db) if is_resolved(risk)]
 
 
