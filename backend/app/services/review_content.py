@@ -2,6 +2,8 @@
 
 from datetime import datetime, timezone
 
+from app.models.risk import Risk
+
 DATA_LIMITATIONS = [
     "SupplySentry does not store this company's supplier contracts, purchase volumes, shipment volumes, inventory cover, or customer commitments.",
     "The event establishes an external signal, not a confirmed loss or disruption for Test Electronics.",
@@ -209,23 +211,41 @@ def build_review_response_plan(risk, event, company_name="Test Electronics", ind
         "decision_support_only":True,
     }
 
-def build_review_correlations(risk_id):
+def build_review_correlations(db, risk_id):
     s = SCENARIOS.get(risk_id)
     if not s:
         return None
-    rows=[]
-    for rid,reason in s["correlations"]:
+    rows = []
+    for index, (rid, reason) in enumerate(s["correlations"]):
+        related = db.query(Risk).filter(Risk.id == rid).first()
+        if related is None or related.event is None:
+            continue
+        score = 78 - index * 5
         rows.append({
-            "risk_id":rid,"event_id":0,"event_title":f"Related curated risk {rid}",
-            "severity":None,"risk_type":None,"location":"United States","event_category":None,
-            "correlation_score":72,"relationship_level":"moderate","relationship_label":"Meaningful similarity",
-            "reasons":[reason],"shared_company_dependencies":[],"days_apart":None,
+            "risk_id": rid,
+            "event_id": related.event.id,
+            "event_title": related.event.title or related.risk_name,
+            "severity": related.severity,
+            "risk_type": related.risk_type or related.risk_name,
+            "location": related.event.location,
+            "event_category": related.event.category,
+            "correlation_score": score,
+            "relationship_level": "high" if score >= 75 else "moderate",
+            "relationship_label": "Strong relationship" if score >= 75 else "Meaningful similarity",
+            "reasons": [reason],
+            "shared_company_dependencies": [],
+            "days_apart": None,
         })
-    return {"risk_id":risk_id,"event_id":None,"correlations":rows[:3],
-            "total_candidates_considered":len(rows),"analysis_window_days":30,
-            "message":None if rows else "No strongly related review signals identified.",
-            "disclaimer":"Review correlations are curated relationships between displayed risk signals; they indicate relevance, not causation.",
-            "company_context_available":True}
+    return {
+        "risk_id": risk_id,
+        "event_id": None,
+        "correlations": rows[:3],
+        "total_candidates_considered": len(rows),
+        "analysis_window_days": 30,
+        "message": None if rows else "No strongly related review signals identified.",
+        "disclaimer": "Review correlations are curated relationships between displayed risk signals; they indicate relevance, not causation.",
+        "company_context_available": True,
+    }
 
 
 def is_review_risk(risk_id: int) -> bool:
