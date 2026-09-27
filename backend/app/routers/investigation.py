@@ -301,6 +301,7 @@ def risk_impact_map(
     risk = db.query(Risk).filter(Risk.id == risk_id).first()
     if risk is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk not found.")
+    presentation_risks(db)
     if risk.event:
         curated = build_review_impact(risk, risk.event)
         if curated:
