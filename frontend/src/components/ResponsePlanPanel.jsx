@@ -33,12 +33,11 @@ function SectionHeading({ children }) {
 }
 
 /**
- * Agent 2 DEMO panel (Response Recommendation).
+ * Runtime response-planning panel.
  *
- * This is a deterministic demonstration template served by the existing
- * read-only backend endpoint. No model runs here and none is described as
- * running: the staged progress only indicates that the prepared scenario is
- * being selected. It is enabled only after an Agent 1 investigation exists.
+ * The backend builds a fresh plan from the selected risk, event, company
+ * dependencies, and existing platform recommendation. It is enabled only
+ * after an Agent 1 investigation exists.
  */
 export default function ResponsePlanPanel({ riskId, investigationReady }) {
   const [plan, setPlan] = useState(null);
@@ -77,7 +76,7 @@ export default function ResponsePlanPanel({ riskId, investigationReady }) {
           <ClipboardList className="h-5 w-5 text-green-600" /> AI Response Recommendation
         </CardTitle>
         <CardDescription>
-          Review possible response options based on the investigated risk and available company context.
+          Generated from this risk's event, assessment, company context, and available platform intelligence.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
