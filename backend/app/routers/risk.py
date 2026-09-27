@@ -92,6 +92,7 @@ def _risk_item(risk, selection_reason: str | None = None) -> ReviewRiskItem:
     event = risk.event
     return ReviewRiskItem(
         risk_id=risk.id,
+        risk_name=risk.risk_name,
         severity=risk.severity,
         risk_score=risk.risk_score,
         risk_type=risk.risk_type,
