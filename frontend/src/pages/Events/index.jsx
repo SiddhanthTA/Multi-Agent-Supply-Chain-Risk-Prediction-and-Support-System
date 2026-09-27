@@ -29,7 +29,7 @@ const fetchEventsData = async (location) => {
     api.get('/company-profile/relevance').catch(() => null),
   ]);
   
-  const risks = risksRes.data;
+  const risks = risksRes.data?.items || [];
   const relevanceByEvent = new Map(
     (relevanceRes?.data?.events || []).map((row) => [row.event_id, row]),
   );
