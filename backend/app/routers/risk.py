@@ -28,7 +28,7 @@ from app.schemas.risk import (
 )
 
 from app.schemas.trends import RiskTrendResponse
-from app.services.review_content import is_review_risk, presentation_risks
+from app.services.review_content import is_review_risk, presentation_risks, presentation_location
 from app.services.risk_trends import (
     ALLOWED_RANGES,
     DEFAULT_RANGE,
@@ -100,7 +100,7 @@ def _risk_item(risk, selection_reason: str | None = None) -> ReviewRiskItem:
         selection_reason=selection_reason,
         title=event.title if event else risk.risk_name,
         category=event.category if event else None,
-        location=event.location if event else None,
+        location=presentation_location(risk),
         source=event.source if event else None,
         event_id=risk.event_id,
         created_at=event.created_at if event else risk.created_at,
