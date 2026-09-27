@@ -23,13 +23,6 @@ from app.models.user import User
 from app.schemas.correlation import RiskCorrelationResponse
 from app.schemas.impact_mapping import ImpactMapResponse
 from app.services.impact_mapping import build_impact_map
-from app.services.review_content import (
-    build_review_correlations,
-    build_review_impact,
-    build_review_investigation,
-    build_review_response_plan,
-    presentation_risks,
-)
 from app.services.risk_correlation import (
     DISCLAIMER,
     _dependencies_for_user,
@@ -41,6 +34,20 @@ from app.schemas.investigation import (
     ResponsePlanResponse,
     RiskReportStatus,
 )
+
+def _is_legacy_investigation(payload: dict) -> bool:
+    """Identify reports produced by the retired pre-written review layer."""
+    model = payload.get("model") or {}
+    return model.get("provider") == "curated-review"
+
+
+def _is_legacy_response_plan(payload: dict) -> bool:
+    """Identify response plans produced by the retired template layers."""
+    return payload.get("generated_by") in {
+        "curated-review",
+        "deterministic-response-plan",
+    }
+
 
 router = APIRouter(prefix="/investigations", tags=["Risk Investigations"])
 
@@ -71,13 +78,6 @@ def risk_report_status(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     _require_risk(db, risk_id)
-    # Initialize the dynamic presentation set before checking whether this
-    # risk belongs to the current review workspace. This also makes direct
-    # deep-links behave the same as opening a risk from the dashboard.
-    presentation_risks(db)
-    risk = db.query(Risk).filter(Risk.id == risk_id).first()
-    if risk and risk.event and build_review_investigation(risk, risk.event):
-        return RiskReportStatus(risk_id=risk_id, investigation_exists=True, response_plan_exists=True)
     return report_status(db, risk_id, current_user.id)
 
 
@@ -99,15 +99,9 @@ def get_risk_investigation(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     _require_risk(db, risk_id)
-    # Refresh the deterministic presentation membership before serving
-    # presentation-backed intelligence.
-    presentation_risks(db)
-    review_risk = db.query(Risk).filter(Risk.id == risk_id).first()
-    if review_risk and review_risk.event:
-        curated = build_review_investigation(review_risk, review_risk.event)
-        if curated:
-            return InvestigationResponse.model_validate(curated)
     stored = get_report(db, risk_id, current_user.id, KIND_INVESTIGATION)
+    if stored is not None and _is_legacy_investigation(stored.payload):
+        stored = None
     if stored is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -130,14 +124,9 @@ def investigate_risk(
     """
     actor = InvestigationActor(user_id=current_user.id, role=current_user.role)
 
-    review_risk = db.query(Risk).filter(Risk.id == risk_id).first()
-    if review_risk and review_risk.event:
-        curated = build_review_investigation(review_risk, review_risk.event)
-        if curated:
-            return InvestigationResponse.model_validate(curated)
-
+    _require_risk(db, risk_id)
     stored = get_report(db, risk_id, current_user.id, KIND_INVESTIGATION)
-    if stored is not None:
+    if stored is not None and not _is_legacy_investigation(stored.payload):
         return InvestigationResponse.model_validate(stored.payload)
 
     try:
@@ -192,12 +181,9 @@ def get_risk_response_plan(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     _require_risk(db, risk_id)
-    review_risk = db.query(Risk).filter(Risk.id == risk_id).first()
-    if review_risk and review_risk.event:
-        curated = build_review_response_plan(review_risk, review_risk.event)
-        if curated:
-            return ResponsePlanResponse.model_validate(curated)
     stored = get_report(db, risk_id, current_user.id, KIND_RESPONSE_PLAN)
+    if stored is not None and _is_legacy_response_plan(stored.payload):
+        stored = None
     if stored is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -224,14 +210,9 @@ def build_risk_response_plan(
 
     actor = InvestigationActor(user_id=current_user.id, role=current_user.role)
 
-    review_risk = db.query(Risk).filter(Risk.id == risk_id).first()
-    if review_risk and review_risk.event:
-        curated = build_review_response_plan(review_risk, review_risk.event)
-        if curated:
-            return ResponsePlanResponse.model_validate(curated)
-
+    _require_risk(db, risk_id)
     stored = get_report(db, risk_id, current_user.id, KIND_RESPONSE_PLAN)
-    if stored is not None:
+    if stored is not None and not _is_legacy_response_plan(stored.payload):
         return ResponsePlanResponse.model_validate(stored.payload)
 
     try:
@@ -301,11 +282,6 @@ def risk_impact_map(
     risk = db.query(Risk).filter(Risk.id == risk_id).first()
     if risk is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk not found.")
-    presentation_risks(db)
-    if risk.event:
-        curated = build_review_impact(risk, risk.event)
-        if curated:
-            return ImpactMapResponse.model_validate(curated)
     return build_impact_map(db, risk_id, user_id=current_user.id)
 
 
@@ -330,10 +306,6 @@ def risk_correlations(
     risk = db.query(Risk).filter(Risk.id == risk_id).first()
     if risk is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk not found.")
-    curated = build_review_correlations(db, risk_id)
-    if curated is not None:
-        return RiskCorrelationResponse.model_validate(curated)
-
     result = find_correlations(db, risk_id, user_id=current_user.id)
     if not result["correlations"]:
         result["message"] = (
