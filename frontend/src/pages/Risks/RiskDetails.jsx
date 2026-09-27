@@ -306,7 +306,7 @@ function RiskActions({ riskId, hasInvestigation, hasResponsePlan, resolution }) 
             <ResolveRiskAction
               riskId={riskId}
               status={resolution?.status}
-              resolvable={resolution?.resolvable}
+              resolvable={resolution?.resolvable || (hasInvestigation && hasResponsePlan)}
             />
           </div>
         </CardContent>
