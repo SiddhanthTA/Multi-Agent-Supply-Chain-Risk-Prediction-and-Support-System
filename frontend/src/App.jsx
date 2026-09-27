@@ -23,6 +23,7 @@ import RiskResponsePlanPage from "@/pages/Risks/ResponsePlan";
 import RiskCorrelationsPage from "@/pages/Risks/Correlations";
 import RiskSupplyChainImpactPage from "@/pages/Risks/SupplyChainImpact";
 import ResolvedRisks from "@/pages/ResolvedRisks";
+import WeatherMonitoring from "@/pages/WeatherMonitoring";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 function App() {
@@ -58,6 +59,7 @@ function App() {
         
         <Route path="health" element={<SystemHealth />} />
         <Route path="company-profile" element={<CompanyProfilePage />} />
+        <Route path="weather" element={<WeatherMonitoring />} />
         <Route path="profile" element={<Profile />} />
         
           {/* Fallback route */}
