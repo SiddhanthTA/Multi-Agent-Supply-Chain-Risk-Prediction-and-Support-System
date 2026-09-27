@@ -28,16 +28,18 @@ import {
 import { companyRelevanceLevel } from '@/lib/riskInvestigation';
 import { fetchCurrentRisks, recentParams } from '@/lib/riskReports';
 
-const fetchDashboardData = async () => {
-  const [eventsRes, risksRes, locationsRes, companyRes] = await Promise.all([
+const fetchDashboardData = async (selectedLocation) => {
+  const [reviewEventsRes, reviewRisksRes, weatherEventsRes, locationsRes, companyRes] = await Promise.all([
+    api.get('/events/review-set', { params: { location: selectedLocation } }),
+    api.get('/risks/review-set', { params: { location: selectedLocation } }),
     api.get('/events/', { params: recentParams() }),
-    api.get('/risks/', { params: recentParams() }),
     api.get('/locations/'),
     api.get('/company-profile/relevance').catch(() => null),
   ]);
   return {
-    events: eventsRes.data,
-    risks: risksRes.data,
+    events: reviewEventsRes.data,
+    risks: reviewRisksRes.data?.items || [],
+    weatherEvents: weatherEventsRes.data,
     locations: locationsRes.data,
     companyRelevance: companyRes?.data || null,
   };
@@ -90,8 +92,8 @@ export default function Dashboard() {
   const autoWeatherLoaded = useRef(false);
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['dashboardWorkspace'],
-    queryFn: fetchDashboardData,
+    queryKey: ['dashboardWorkspace', selectedLocation],
+    queryFn: () => fetchDashboardData(selectedLocation),
     refetchInterval: 30000,
   });
   const { data: currentRiskData } = useQuery({
@@ -132,7 +134,7 @@ export default function Dashboard() {
     [data?.locations, weatherScope],
   );
   const scopedWeatherCityStates = useMemo(
-    () => buildWeatherCityStates(data?.locations, data?.events, data?.risks)
+    () => buildWeatherCityStates(data?.locations, data?.weatherEvents, data?.risks)
       .filter((s) => selectedWeatherLocations.some((l) => l.id === s.location.id)),
     [data?.locations, data?.events, data?.risks, selectedWeatherLocations],
   );
