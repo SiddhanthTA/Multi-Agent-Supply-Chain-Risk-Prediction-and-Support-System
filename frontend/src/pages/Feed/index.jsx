@@ -9,27 +9,30 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Activity, AlertTriangle, BrainCircuit, Lightbulb, Rss, Search, X, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
+import { WORKSPACE_LOCATIONS, normalizeWorkspaceLocation } from '@/lib/locationWorkspace';
 
-const fetchFeedData = async () => {
+const fetchFeedData = async (location) => {
   const [eventsRes, risksRes, predictionsRes, recsRes] = await Promise.all([
-    api.get('/events/'),
-    api.get('/risks/'),
+    api.get('/events/review-set', { params: { location } }),
+    api.get('/risks/review-set', { params: { location } }),
     api.get('/predictions/'),
     api.get('/recommendations/'),
   ]);
 
+  const risks = risksRes.data?.items || [];
+  const reviewRiskIds = new Set(risks.map((item) => Number(item.risk_id)));
   const feed = [];
 
   eventsRes.data.forEach(item => {
     feed.push({ ...item, type: 'Event', timestamp: item.created_at ? new Date(item.created_at) : new Date(0) });
   });
-  risksRes.data.forEach(item => {
+  risks.forEach(item => {
     feed.push({ ...item, type: 'Risk', timestamp: item.created_at ? new Date(item.created_at) : new Date(0) });
   });
-  predictionsRes.data.forEach(item => {
+  predictionsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id))).forEach(item => {
     feed.push({ ...item, type: 'Prediction', timestamp: item.created_at ? new Date(item.created_at) : new Date(0) });
   });
-  recsRes.data.forEach(item => {
+  recsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id)) || reviewRiskIds.has(Number(item.prediction_id))).forEach(item => {
     feed.push({ ...item, type: 'Recommendation', timestamp: item.created_at ? new Date(item.created_at) : new Date(0) });
   });
 
@@ -38,18 +41,19 @@ const fetchFeedData = async () => {
     counts: {
       total: feed.length,
       events: eventsRes.data.length,
-      risks: risksRes.data.length,
-      predictions: predictionsRes.data.length,
-      recommendations: recsRes.data.length
+      risks: risks.length,
+      predictions: predictionsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id))).length,
+      recommendations: recsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id)) || reviewRiskIds.has(Number(item.prediction_id))).length
     }
   };
 };
 
 export default function IntelligenceFeed() {
   const navigate = useNavigate();
+  const [selectedLocation, setSelectedLocation] = useState(() => normalizeWorkspaceLocation(localStorage.getItem('supplysentry-location')));
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['intelligenceFeed'],
-    queryFn: fetchFeedData,
+    queryKey: ['intelligenceFeed', selectedLocation],
+    queryFn: () => fetchFeedData(selectedLocation),
     refetchInterval: 30000,
   });
 
