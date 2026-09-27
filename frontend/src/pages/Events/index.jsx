@@ -21,11 +21,12 @@ import { formatLocationDisplay } from '@/lib/locationDisplay';
 import { recentParams } from '@/lib/riskReports';
 import { CompanyRelevanceBadge, CompanyRelevanceMatches } from '@/components/CompanyRelevance';
 import { companyRelevanceOptions, isCompanyRelevant } from '@/lib/riskInvestigation';
+import { WORKSPACE_LOCATIONS, normalizeWorkspaceLocation } from '@/lib/locationWorkspace';
 
-const fetchEventsData = async () => {
+const fetchEventsData = async (location) => {
   const [eventsRes, risksRes, relevanceRes] = await Promise.all([
-    api.get('/events/', { params: recentParams() }),
-    api.get('/risks/', { params: recentParams() }),
+    api.get('/events/review-set', { params: { location } }),
+    api.get('/risks/review-set', { params: { location } }),
     api.get('/company-profile/relevance').catch(() => null),
   ]);
   
@@ -49,9 +50,10 @@ const fetchEventsData = async () => {
 
 export default function Events() {
   const navigate = useNavigate();
+  const [selectedLocation, setSelectedLocation] = useState(() => normalizeWorkspaceLocation(localStorage.getItem('supplysentry-location')));
   const { data: events = [], isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['eventsList'],
-    queryFn: fetchEventsData,
+    queryKey: ['eventsList', selectedLocation],
+    queryFn: () => fetchEventsData(selectedLocation),
   });
 
   // Filtering State
@@ -142,6 +144,20 @@ export default function Events() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-muted-foreground">Workspace</label>
+          <select
+            value={selectedLocation}
+            onChange={(e) => {
+              setSelectedLocation(e.target.value);
+              localStorage.setItem('supplysentry-location', e.target.value);
+              setCurrentPage(1);
+            }}
+            className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
+          >
+            {WORKSPACE_LOCATIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </div>
         <div>
           <h2 className="text-3xl font-bold tracking-tight flex items-center gap-3">
             <Activity className="h-8 w-8 text-primary" />
