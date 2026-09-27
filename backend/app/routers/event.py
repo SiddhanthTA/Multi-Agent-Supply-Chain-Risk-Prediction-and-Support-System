@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
+from app.crud.risk import get_review_risks
 
 from app.crud.event import (
     create_event,
@@ -46,6 +47,37 @@ def read_events(
     db: Session = Depends(get_db)
 ):
     return get_events(db, days=days)
+
+
+@router.get("/review-set", response_model=list[EventResponse])
+def read_review_events(
+    location: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Events belonging to the curated presentation review set."""
+    selected = (location or "all").strip()
+
+    def matches(value: str | None) -> bool:
+        value = str(value or "").strip()
+        if selected in ("", "all", "All Locations"):
+            return True
+        if selected == "Global":
+            return value == "" or value.lower() == "unknown" or value not in {"India", "United States"}
+        if selected == "India":
+            return value == "India" or value.endswith(", India") or value.endswith(",India")
+        if selected == "United States":
+            return value == "United States" or value.endswith(", United States") or value.endswith(",United States")
+        return value == selected
+
+    events = []
+    seen = set()
+    for entry in get_review_risks(db):
+        risk = entry.risk
+        event = risk.event if risk else None
+        if event and event.id not in seen and matches(event.location):
+            events.append(event)
+            seen.add(event.id)
+    return events
 
 
 @router.get("/{event_id}", response_model=EventResponse)
