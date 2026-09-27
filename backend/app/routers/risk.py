@@ -28,7 +28,7 @@ from app.schemas.risk import (
 )
 
 from app.schemas.trends import RiskTrendResponse
-from app.services.review_content import is_review_risk, presentation_risks, presentation_location
+from app.services.review_content import presentation_risks, presentation_location
 from app.services.risk_trends import (
     ALLOWED_RANGES,
     DEFAULT_RANGE,
@@ -200,13 +200,12 @@ def _resolution_state(db: Session, risk, user_id: int) -> dict:
     # recognize the same presentation risks as the dashboard.
     presentation_risks(db)
     kinds = get_report_kinds(db, risk.id, user_id)
-    curated = is_review_risk(risk.id)
     return {
         "risk_id": risk.id,
         "status": risk.status,
         "resolvable": is_risk_resolvable(db, risk, user_id),
-        "investigation_exists": curated or KIND_INVESTIGATION in kinds,
-        "response_plan_exists": curated or KIND_RESPONSE_PLAN in kinds,
+        "investigation_exists": KIND_INVESTIGATION in kinds,
+        "response_plan_exists": KIND_RESPONSE_PLAN in kinds,
         "resolved_at": risk.updated_at if is_resolved(risk) else None,
     }
 
