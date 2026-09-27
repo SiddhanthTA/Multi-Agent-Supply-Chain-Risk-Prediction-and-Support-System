@@ -29,10 +29,12 @@ const fetchFeedData = async (location) => {
   risks.forEach(item => {
     feed.push({ ...item, id: item.risk_id, type: 'Risk', timestamp: item.created_at ? new Date(item.created_at) : new Date(0) });
   });
-  predictionsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id))).forEach(item => {
+  const reviewPredictions = predictionsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id)));
+  const reviewPredictionIds = new Set(reviewPredictions.map((item) => Number(item.id)));
+  reviewPredictions.forEach(item => {
     feed.push({ ...item, type: 'Prediction', timestamp: item.created_at ? new Date(item.created_at) : new Date(0) });
   });
-  recsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id)) || reviewRiskIds.has(Number(item.prediction_id))).forEach(item => {
+  recsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id)) || reviewPredictionIds.has(Number(item.prediction_id))).forEach(item => {
     feed.push({ ...item, type: 'Recommendation', timestamp: item.created_at ? new Date(item.created_at) : new Date(0) });
   });
 
@@ -42,8 +44,8 @@ const fetchFeedData = async (location) => {
       total: feed.length,
       events: eventsRes.data.length,
       risks: risks.length,
-      predictions: predictionsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id))).length,
-      recommendations: recsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id)) || reviewRiskIds.has(Number(item.prediction_id))).length
+      predictions: reviewPredictions.length,
+      recommendations: recsRes.data.filter((item) => reviewRiskIds.has(Number(item.risk_id)) || reviewPredictionIds.has(Number(item.prediction_id))).length
     }
   };
 };
