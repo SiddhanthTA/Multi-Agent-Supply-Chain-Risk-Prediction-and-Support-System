@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
-from app.crud.risk import get_review_risks
+from app.services.review_content import presentation_risks
 
 from app.crud.event import (
     create_event,
@@ -71,8 +71,7 @@ def read_review_events(
 
     events = []
     seen = set()
-    for entry in get_review_risks(db):
-        risk = entry.risk
+    for risk in presentation_risks(db):
         event = risk.event if risk else None
         if event and event.id not in seen and matches(event.location):
             events.append(event)
